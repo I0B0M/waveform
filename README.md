@@ -59,7 +59,10 @@ The menu-bar icon (waveform + mic) shows **live permission status** — if somet
 
 ## The app window
 
-Menu-bar icon → **Open Waveform…**
+Open Waveform (Applications, Spotlight, or the Dock) and the dashboard comes up;
+the menu-bar icon → **Open Waveform…** does the same at any time. While the
+window is open the app shows a Dock icon; close it and Waveform drops back to
+being just a menu-bar icon. Launching at login does *not* pop the window.
 
 <img src="docs/images/dashboard-home.png" width="720" alt="Home: stats, top apps, recent dictations">
 
@@ -115,6 +118,7 @@ history.
 
 ```bash
 swift run waveform-tests                      # unit tests
+/usr/bin/log show --last 5m --predicate 'subsystem == "com.ibrahim.waveform"'  # what a running copy is doing
 .build/debug/Waveform --selftest              # end-to-end: say → SpeechAnalyzer → cleanup, with timings
 .build/debug/Waveform --fm-check              # is the on-device LLM available?
 .build/debug/Waveform --render-hud out.png    # render the HUD for design review

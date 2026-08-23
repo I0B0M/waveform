@@ -4,7 +4,7 @@ import ServiceManagement
 import SwiftUI
 
 @MainActor
-public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     public override init() { super.init() }
 
     private var statusItem: NSStatusItem?
@@ -29,6 +29,30 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         Task.detached(priority: .utility) {
             LocalRewriter.prewarm()
         }
+
+        // Opening the app should show something. Without this, double-clicking
+        // Waveform.app looks like nothing happened — it's a menu-bar app, so
+        // there is no window and no Dock bounce to explain itself.
+        //
+        // Only for a user-initiated launch: when macOS starts us as a login
+        // item this key is false, and popping a window into someone's face at
+        // every login is not what "launch at login" should mean.
+        let userLaunched = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
+        Log.app.notice("launched (userLaunched: \(userLaunched, privacy: .public))")
+        if userLaunched {
+            openSettings()
+        }
+    }
+
+    /// Double-clicking the app (or Spotlight-opening it) while it is already
+    /// running lands here instead of starting a second copy.
+    public func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        Log.app.notice("reopen requested (hasVisibleWindows: \(flag, privacy: .public))")
+        openSettings()
+        return true
     }
 
     private func registerHotkey() {
@@ -203,9 +227,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             window.setContentSize(NSSize(width: 840, height: 580))
             window.isReleasedWhenClosed = false
             window.center()
+            window.delegate = self
             settingsWindow = window
         }
+        // Become a normal app while a window is up: that gives the Dock icon
+        // and ⌘Tab, which people expect from a window they can see. We drop
+        // back to accessory on close so the app stays out of the way.
+        NSApp.setActivationPolicy(.regular)
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        Log.app.notice("dashboard shown (visible: \(self.settingsWindow?.isVisible ?? false, privacy: .public))")
+    }
+
+    public func windowWillClose(_ notification: Notification) {
+        guard (notification.object as? NSWindow) === settingsWindow else { return }
+        NSApp.setActivationPolicy(.accessory)
     }
 }
