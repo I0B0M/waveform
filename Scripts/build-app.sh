@@ -19,19 +19,21 @@ IDENTITY="${CODESIGN_IDENTITY:-}"
 # First run on a new machine: create a local self-signed signing identity so
 # macOS permission grants (Microphone/Accessibility) survive rebuilds.
 # Without one, every rebuild looks like a brand-new app to macOS.
+CERT_NAME="Waveform Dev"
+
 ensure_cert() {
-  if security find-identity -v -p codesigning 2>/dev/null | grep -q "Waveform Dev"; then
+  if security find-identity -v -p codesigning 2>/dev/null | grep -q "$CERT_NAME"; then
     return
   fi
-  echo "Creating local 'Waveform Dev' signing certificate (one time)…"
+  echo "Creating local \"$CERT_NAME\" signing certificate (one time)…"
   local tmp; tmp=$(mktemp -d)
   openssl req -x509 -newkey rsa:2048 -keyout "$tmp/key.pem" -out "$tmp/cert.pem" \
-    -days 3650 -nodes -subj "/CN=Waveform Dev" \
+    -days 3650 -nodes -subj "/CN=$CERT_NAME" \
     -addext "keyUsage=critical,digitalSignature" \
     -addext "extendedKeyUsage=critical,codeSigning" \
     -addext "basicConstraints=critical,CA:false" 2>/dev/null
   openssl pkcs12 -export -out "$tmp/dev.p12" -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
-    -name "Waveform Dev" -passout pass:waveform 2>/dev/null
+    -name "$CERT_NAME" -passout pass:waveform 2>/dev/null
   security import "$tmp/dev.p12" -k ~/Library/Keychains/login.keychain-db \
     -P waveform -T /usr/bin/codesign >/dev/null
   security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db \
@@ -41,11 +43,14 @@ ensure_cert() {
 
 if [ -z "$IDENTITY" ]; then
   ensure_cert
-  # Prefer any real codesigning identity over ad-hoc: ad-hoc identity changes
-  # every rebuild, and macOS then silently drops the Accessibility/Microphone
-  # grants. See README for the one-time self-signed certificate setup.
-  IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' 'NR==1 {print $2}')
-  IDENTITY="${IDENTITY:--}"
+  # Pin to OUR certificate by name. Never "first identity found": the signing
+  # identity is what macOS ties Microphone/Accessibility grants to, so picking
+  # a different cert on a later build silently revokes every permission.
+  if security find-identity -v -p codesigning 2>/dev/null | grep -q "$CERT_NAME"; then
+    IDENTITY="$CERT_NAME"
+  else
+    IDENTITY="-"
+  fi
 fi
 
 # Only the app product — the test runner uses @testable and is debug-only.
@@ -53,9 +58,18 @@ swift build -c "$CONFIG" --product Waveform
 
 APP="build/Waveform.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "Support/Info.plist" "$APP/Contents/Info.plist"
 cp ".build/$CONFIG/Waveform" "$APP/Contents/MacOS/Waveform"
+
+# App icon: regenerate whenever the drawing is newer than the built .icns.
+if [ ! -f Support/AppIcon.icns ] || [ Sources/WaveformCore/Branding/DiscoIconView.swift -nt Support/AppIcon.icns ]; then
+  echo "Regenerating app icon…"
+  ICONSET=$(mktemp -d)/Waveform.iconset
+  ".build/$CONFIG/Waveform" --export-iconset "$ICONSET" >/dev/null
+  iconutil -c icns "$ICONSET" -o Support/AppIcon.icns
+fi
+cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 codesign --force --sign "$IDENTITY" --identifier com.ibrahim.waveform "$APP"
 

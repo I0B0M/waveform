@@ -18,6 +18,11 @@ MainActor.assumeIsolated {
         HUDSnapshot.renderSettingsAndExit(to: arguments[index + 1])
     } else if let index = arguments.firstIndex(of: "--render-hud-compact"), arguments.indices.contains(index + 1) {
         HUDSnapshot.renderCompactAndExit(to: arguments[index + 1])
+    } else if let index = arguments.firstIndex(of: "--export-iconset"), arguments.indices.contains(index + 1) {
+        IconExporter.exportIconsetAndExit(to: arguments[index + 1])
+    } else if let index = arguments.firstIndex(of: "--render-icon"), arguments.indices.contains(index + 1) {
+        let pixels = arguments.indices.contains(index + 2) ? Int(arguments[index + 2]) ?? 512 : 512
+        IconExporter.exportPreviewAndExit(to: arguments[index + 1], pixels: pixels)
     } else if arguments.contains("--diagnose") {
         Diagnostics.runAndExit()
     } else if arguments.contains("--fm-check") {

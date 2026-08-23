@@ -94,14 +94,18 @@ private struct HomeTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text(greeting)
-                    .font(.system(size: 32, weight: .black, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [DashboardView.orange, DashboardView.pink, DashboardView.violet, DashboardView.cyan],
-                            startPoint: .leading, endPoint: .trailing
+                HStack(spacing: 14) {
+                    DiscoIconView(showsPlate: false)
+                        .frame(width: 46, height: 46)
+                    Text(greeting)
+                        .font(.system(size: 32, weight: .black, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [DashboardView.orange, DashboardView.pink, DashboardView.violet, DashboardView.cyan],
+                                startPoint: .leading, endPoint: .trailing
+                            )
                         )
-                    )
+                }
                 Text("Speak anywhere. Clean text lands at your cursor. 100% on-device.")
                     .foregroundStyle(.secondary)
 

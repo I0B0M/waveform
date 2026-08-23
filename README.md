@@ -37,6 +37,18 @@ The menu-bar icon (waveform + mic) shows **live permission status** — if somet
 - **Filler removal**: "um okay so basically…" → "Okay, so basically…". Toggleable.
 - All settings save automatically — there is no Save button.
 
+## Icon
+
+The app mark — an audio waveform built from disco-ball mirror facets — is drawn
+in code (`Sources/WaveformCore/Branding/DiscoIconView.swift`), not shipped as
+bitmaps, so it stays crisp at every size. `Scripts/build-app.sh` regenerates
+`Support/AppIcon.icns` automatically whenever that drawing changes.
+
+```bash
+.build/debug/Waveform --render-icon icon.png 1024   # preview one size
+.build/debug/Waveform --export-iconset out.iconset  # all macOS sizes
+```
+
 ## Verification harnesses (no permissions needed)
 
 ```bash
