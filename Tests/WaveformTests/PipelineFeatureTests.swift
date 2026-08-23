@@ -23,13 +23,13 @@ struct SelfCorrectionTests {
 @Suite("SnippetMatcher")
 struct SnippetMatcherTests {
     let snippets = [
-        Snippet(trigger: "my calendar link", expansion: "https://cal.com/ibrahim"),
+        Snippet(trigger: "my calendar link", expansion: "https://cal.example.com/book"),
         Snippet(trigger: "office address", expansion: "12 Harbor Street, Suite 400"),
     ]
 
     @Test("exact trigger matches, punctuation ignored")
     func exact() {
-        #expect(SnippetMatcher.expansion(for: "My calendar link.", in: snippets) == "https://cal.com/ibrahim")
+        #expect(SnippetMatcher.expansion(for: "My calendar link.", in: snippets) == "https://cal.example.com/book")
     }
 
     @Test("insert prefix matches")
