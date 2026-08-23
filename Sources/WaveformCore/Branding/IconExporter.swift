@@ -62,6 +62,29 @@ public enum IconExporter {
         }
     }
 
+    /// The GitHub social-preview card at its exact required size.
+    @MainActor
+    public static func exportSocialPreviewAndExit(to path: String) {
+        _ = NSApplication.shared
+        do {
+            let renderer = ImageRenderer(content: SocialPreviewView())
+            renderer.scale = 1
+            guard let cgImage = renderer.cgImage,
+                  let data = NSBitmapImageRep(cgImage: cgImage)
+                      .representation(using: .png, properties: [:]) else {
+                throw NSError(domain: "IconExporter", code: 3, userInfo: [
+                    NSLocalizedDescriptionKey: "social preview render failed",
+                ])
+            }
+            try data.write(to: URL(fileURLWithPath: path))
+            print("Wrote \(path) (1280x640, \(data.count / 1024) KB)")
+            exit(0)
+        } catch {
+            print("FAIL: \(error)")
+            exit(1)
+        }
+    }
+
     @MainActor
     private static func png(pixels: Int, plate: Bool = true) throws -> Data {
         let side = CGFloat(pixels)

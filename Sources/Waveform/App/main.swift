@@ -28,6 +28,8 @@ MainActor.assumeIsolated {
         IconExporter.exportGlyphAndExit(to: arguments[index + 1], pixels: pixels)
     } else if let index = arguments.firstIndex(of: "--render-docs"), arguments.indices.contains(index + 1) {
         DocsRenderer.renderAllAndExit(to: arguments[index + 1])
+    } else if let index = arguments.firstIndex(of: "--render-social"), arguments.indices.contains(index + 1) {
+        IconExporter.exportSocialPreviewAndExit(to: arguments[index + 1])
     } else if arguments.contains("--diagnose") {
         Diagnostics.runAndExit()
     } else if arguments.contains("--fm-check") {
