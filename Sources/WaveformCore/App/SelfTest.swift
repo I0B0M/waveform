@@ -19,7 +19,7 @@ public enum SelfTest {
 
     private static func run(text: String) async -> Int32 {
         let audioURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("discotype-selftest.aiff")
+            .appendingPathComponent("waveform-selftest.aiff")
 
         print("[1/4] Synthesizing speech with `say`: \"\(text)\"")
         do {

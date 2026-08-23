@@ -49,7 +49,7 @@ final class DictationCoordinator {
             enginePrepared = true
         } catch {
             prepareFailure = error.localizedDescription
-            NSLog("Discotype: engine prepare failed: \(error)")
+            NSLog("Waveform: engine prepare failed: \(error)")
         }
     }
 
@@ -184,7 +184,7 @@ final class DictationCoordinator {
         } catch {
             await engine.cancelSession()
             hud.state.phase = .error("Transcription failed")
-            NSLog("Discotype: finish failed: \(error)")
+            NSLog("Waveform: finish failed: \(error)")
             hideHUDAfterDelay()
         }
         state = .idle

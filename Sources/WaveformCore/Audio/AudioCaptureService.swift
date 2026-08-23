@@ -6,7 +6,7 @@ import QuartzCore
 /// level for the waveform.
 ///
 /// The engine only exists while dictation is active — `stop()` tears the whole
-/// thing down, so an idle Discotype holds no audio hardware, timers, or taps
+/// thing down, so an idle Waveform holds no audio hardware, timers, or taps
 /// (zero background CPU / battery cost).
 final class AudioCaptureService {
     /// Called on the audio thread with a buffer already in the target format.

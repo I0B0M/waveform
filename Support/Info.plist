@@ -5,15 +5,15 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>Discotype</string>
+    <string>Waveform</string>
     <key>CFBundleIdentifier</key>
-    <string>com.ibrahim.discotype</string>
+    <string>com.ibrahim.waveform</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Discotype</string>
+    <string>Waveform</string>
     <key>CFBundleDisplayName</key>
-    <string>Discotype</string>
+    <string>Waveform</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -27,6 +27,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Discotype listens only while dictation is active and transcribes your voice entirely on this Mac. Audio never leaves the device.</string>
+    <string>Waveform listens only while dictation is active and transcribes your voice entirely on this Mac. Audio never leaves the device.</string>
 </dict>
 </plist>

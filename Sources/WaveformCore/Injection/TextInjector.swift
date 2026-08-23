@@ -81,7 +81,7 @@ final class TextInjector {
                 outcome = .typed
             }
         }
-        NSLog("Discotype: injected %d chars via %@ (method: %@)", text.count, String(describing: outcome), method.rawValue)
+        NSLog("Waveform: injected %d chars via %@ (method: %@)", text.count, String(describing: outcome), method.rawValue)
         return outcome
     }
 

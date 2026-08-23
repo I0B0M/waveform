@@ -7,22 +7,22 @@ let cltFrameworks = "/Library/Developer/CommandLineTools/Library/Developer/Frame
 let cltTestingLibs = "/Library/Developer/CommandLineTools/Library/Developer/usr/lib"
 
 let package = Package(
-    name: "Discotype",
+    name: "Waveform",
     platforms: [
         .macOS("26.0")
     ],
     targets: [
         .target(
-            name: "DiscotypeCore",
-            path: "Sources/DiscotypeCore",
+            name: "WaveformCore",
+            path: "Sources/WaveformCore",
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ]
         ),
         .executableTarget(
-            name: "Discotype",
-            dependencies: ["DiscotypeCore"],
-            path: "Sources/Discotype",
+            name: "Waveform",
+            dependencies: ["WaveformCore"],
+            path: "Sources/Waveform",
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ]
@@ -30,11 +30,11 @@ let package = Package(
         // The CLT `swift test` runner silently executes zero swift-testing
         // tests (verified: a deliberately broken assertion still exits 0), so
         // the suite is a plain executable calling the Testing entry point:
-        //   swift run discotype-tests
+        //   swift run waveform-tests
         .executableTarget(
-            name: "discotype-tests",
-            dependencies: ["DiscotypeCore"],
-            path: "Tests/DiscotypeTests",
+            name: "waveform-tests",
+            dependencies: ["WaveformCore"],
+            path: "Tests/WaveformTests",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
                 .unsafeFlags(["-F", cltFrameworks]),

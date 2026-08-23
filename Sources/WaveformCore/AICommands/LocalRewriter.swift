@@ -51,7 +51,7 @@ final class LocalRewriter {
             }
             return Self.validated(output, against: command)
         } catch {
-            NSLog("Discotype: local rewrite failed (%@) — falling back to raw text", String(describing: error))
+            NSLog("Waveform: local rewrite failed (%@) — falling back to raw text", String(describing: error))
             return nil
         }
     }

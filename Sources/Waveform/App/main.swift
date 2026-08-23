@@ -1,9 +1,9 @@
 import AppKit
-import DiscotypeCore
+import WaveformCore
 
 // CLI modes used for headless verification (no HUD, no hotkey):
-//   discotype --selftest ["text"]   synthesize speech with `say`, transcribe it, print pipeline output
-//   discotype --render-hud <path>   render the HUD view to a PNG for design review
+//   waveform --selftest ["text"]   synthesize speech with `say`, transcribe it, print pipeline output
+//   waveform --render-hud <path>   render the HUD view to a PNG for design review
 let arguments = CommandLine.arguments
 
 MainActor.assumeIsolated {

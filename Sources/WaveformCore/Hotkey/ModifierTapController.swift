@@ -46,7 +46,7 @@ final class ModifierTapController: @unchecked Sendable {
                 CFRunLoopRun()
             }
         }
-        thread.name = "discotype.modifier-tap"
+        thread.name = "waveform.modifier-tap"
         thread.qualityOfService = .userInteractive
         self.thread = thread
         thread.start()
@@ -116,7 +116,7 @@ final class ModifierTapController: @unchecked Sendable {
             if let tap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            NSLog("Discotype: modifier tap was disabled (%d) — re-enabled", type.rawValue)
+            NSLog("Waveform: modifier tap was disabled (%d) — re-enabled", type.rawValue)
 
         case .flagsChanged:
             let timestamp = Double(event.timestamp) / 1_000_000_000

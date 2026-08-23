@@ -1,5 +1,5 @@
 import Testing
-@testable import DiscotypeCore
+@testable import WaveformCore
 
 @Suite("TextCleaner")
 struct TextCleanerTests {

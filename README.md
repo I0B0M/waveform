@@ -1,4 +1,4 @@
-# Discotype
+# Waveform
 
 Local-first dictation for macOS 26 with a retro neon HUD. Speak anywhere, get clean text at your cursor — **everything on-device**: transcription (Apple SpeechAnalyzer), cleanup, and AI rewriting (Apple Intelligence). No cloud, no account, no audio ever leaving your Mac.
 
@@ -9,17 +9,17 @@ Local-first dictation for macOS 26 with a retro neon HUD. Speak anywhere, get cl
 Requirements: **macOS 26** on Apple silicon, Xcode **Command Line Tools** (`xcode-select --install`). No Xcode needed.
 
 ```bash
-git clone <repo-url> && cd Discotype
+git clone <repo-url> && cd Waveform
 Scripts/build-app.sh
-open build/Discotype.app
+open build/Waveform.app
 ```
 
-The build script creates a local "Discotype Dev" signing certificate on first run (so macOS permission grants survive rebuilds — without it, every rebuild looks like a new app and permissions silently reset).
+The build script creates a local "Waveform Dev" signing certificate on first run (so macOS permission grants survive rebuilds — without it, every rebuild looks like a new app and permissions silently reset).
 
 First launch:
 1. Press the hotkey once (default **⌘X** — yes, it replaces Cut; change it in Settings).
 2. Grant **Microphone** when prompted.
-3. Grant **Accessibility** (System Settings opens — toggle Discotype ON). Needed to insert text into other apps and for the double-tap-Control hotkey.
+3. Grant **Accessibility** (System Settings opens — toggle Waveform ON). Needed to insert text into other apps and for the double-tap-Control hotkey.
 4. The first dictation may download the on-device speech model once (system-managed).
 
 The menu-bar icon (waveform + mic) shows **live permission status** — if something isn't working, look there first: ✗ rows are clickable and open the right settings pane.
@@ -38,11 +38,11 @@ The menu-bar icon (waveform + mic) shows **live permission status** — if somet
 ## Verification harnesses (no permissions needed)
 
 ```bash
-swift run discotype-tests                      # unit tests
-.build/debug/Discotype --selftest              # end-to-end: say → SpeechAnalyzer → cleanup, with timings
-.build/debug/Discotype --fm-check              # is the on-device LLM available?
-.build/debug/Discotype --render-hud out.png    # render the HUD for design review
-.build/debug/Discotype --render-settings out.png
+swift run waveform-tests                      # unit tests
+.build/debug/Waveform --selftest              # end-to-end: say → SpeechAnalyzer → cleanup, with timings
+.build/debug/Waveform --fm-check              # is the on-device LLM available?
+.build/debug/Waveform --render-hud out.png    # render the HUD for design review
+.build/debug/Waveform --render-settings out.png
 ```
 
 (`swift test` runs zero tests under Command Line Tools — hence the executable runner.)
@@ -50,8 +50,8 @@ swift run discotype-tests                      # unit tests
 ## Architecture
 
 ```
-Sources/Discotype/            thin executable (main.swift, CLI flags)
-Sources/DiscotypeCore/
+Sources/Waveform/            thin executable (main.swift, CLI flags)
+Sources/WaveformCore/
   Hotkey/                     Carbon hotkey (combos) + CGEventTap on a dedicated
                               thread (bare-modifier double-tap), pure tested detector
   Audio/                      AVAudioEngine tap → converter → engine format; throttled levels

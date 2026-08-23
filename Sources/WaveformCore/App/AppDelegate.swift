@@ -44,7 +44,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             // The tap can't exist until Accessibility is granted. Say so
             // out loud and re-register automatically once the grant lands.
             hotkeyWarning = "⚠️ \(preset.label) needs Accessibility — waiting for the grant"
-            NSLog("Discotype: event tap unavailable; prompting for Accessibility")
+            NSLog("Waveform: event tap unavailable; prompting for Accessibility")
             _ = TextInjector.isTrusted(promptIfNeeded: true)
             hotkeyRetryTask = Task { [weak self] in
                 while !Task.isCancelled {
@@ -59,7 +59,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             }
         } catch {
             hotkeyWarning = "⚠️ Hotkey failed: \(error.localizedDescription)"
-            NSLog("Discotype: hotkey registration failed: \(error)")
+            NSLog("Waveform: hotkey registration failed: \(error)")
         }
         refreshMenu()
     }
@@ -76,7 +76,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
         if let button = item.button {
             button.image = NSImage(
                 systemSymbolName: "waveform.and.mic",
-                accessibilityDescription: "Discotype"
+                accessibilityDescription: "Waveform"
             )
         }
         statusItem = item
@@ -146,7 +146,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit Discotype", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Waveform", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
 
         item.menu = menu
@@ -175,7 +175,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
             })
             let hosting = NSHostingController(rootView: view)
             let window = NSWindow(contentViewController: hosting)
-            window.title = "Discotype Settings"
+            window.title = "Waveform Settings"
             window.setContentSize(NSSize(width: 460, height: 700))
             window.isReleasedWhenClosed = false
             window.center()

@@ -34,7 +34,7 @@ struct SettingsView: View {
                 }
 
                 if hotkeyPreset == .commandX {
-                    Text("Heads-up: while Discotype is running, ⌘X starts/stops dictation everywhere — it no longer performs Cut.")
+                    Text("Heads-up: while Waveform is running, ⌘X starts/stops dictation everywhere — it no longer performs Cut.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
