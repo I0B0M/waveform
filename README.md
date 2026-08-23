@@ -1,72 +1,75 @@
 # Discotype
 
-Local-first dictation for macOS 26 with a retro-futuristic neon HUD.
+Local-first dictation for macOS 26 with a retro neon HUD. Speak anywhere, get clean text at your cursor — **everything on-device**: transcription (Apple SpeechAnalyzer), cleanup, and AI rewriting (Apple Intelligence). No cloud, no account, no audio ever leaving your Mac.
 
-**⌘X → HUD appears, recording starts → speak → live transcription → ⌘X → cleaned text lands at your cursor** — in Slack, VS Code, a browser field, Notes, anywhere.
+**Flow:** hotkey → neon HUD → speak → live transcription → stop talking (auto-stops after silence) → cleaned text lands wherever your cursor is: Slack, VS Code, browser, Notes, anywhere.
 
-Everything runs on-device: Apple's macOS 26 `SpeechAnalyzer`/`SpeechTranscriber` model transcribes locally, cleanup is rule-based, and no audio, text, or clipboard data ever leaves the Mac. While idle the app holds no audio hardware, no timers, and no event taps — effectively zero CPU/battery cost.
+## Install (colleagues start here)
 
-## Build & run
-
-Requires macOS 26 and Command Line Tools (no Xcode needed).
+Requirements: **macOS 26** on Apple silicon, Xcode **Command Line Tools** (`xcode-select --install`). No Xcode needed.
 
 ```bash
-Scripts/build-app.sh            # → build/Discotype.app (release, ad-hoc signed)
+git clone <repo-url> && cd Discotype
+Scripts/build-app.sh
 open build/Discotype.app
 ```
 
-First run:
-1. Press the hotkey once — macOS asks for **Microphone** (transcription) and **Accessibility** (inserting text into other apps). Grant both; Accessibility requires a manual toggle in System Settings → Privacy & Security.
-2. The first dictation may download the on-device speech model (one-time, system-managed, shared across apps).
+The build script creates a local "Discotype Dev" signing certificate on first run (so macOS permission grants survive rebuilds — without it, every rebuild looks like a new app and permissions silently reset).
 
-Menu bar icon (waveform + mic) → Settings for hotkey choice, filler-word removal, and insertion method.
+First launch:
+1. Press the hotkey once (default **⌘X** — yes, it replaces Cut; change it in Settings).
+2. Grant **Microphone** when prompted.
+3. Grant **Accessibility** (System Settings opens — toggle Discotype ON). Needed to insert text into other apps and for the double-tap-Control hotkey.
+4. The first dictation may download the on-device speech model once (system-managed).
 
-### Signing note (important for daily use)
+The menu-bar icon (waveform + mic) shows **live permission status** — if something isn't working, look there first: ✗ rows are clickable and open the right settings pane.
 
-Ad-hoc signatures change identity on every rebuild, so macOS forgets the Microphone/Accessibility grants each time you rebuild. One-time fix: create a self-signed code-signing certificate (Keychain Access → Certificate Assistant → Create a Certificate… → type **Code Signing**, name it e.g. `Discotype Dev`), then:
+## Using it
+
+- **Start/stop**: your hotkey (Settings offers ⌘X, ⌥Space, ⌃⌥D, F19, or **double-tap Control**). Dictation also **auto-stops** after ~2.5s of silence once you've spoken (configurable / off).
+- **AI commands** (on-device, free — requires Apple Intelligence enabled): start your dictation with a command and ramble; the local model restructures it before inserting:
+  - *"Make this message better and more structured, — okay so basically we need to move the deadline and…"*
+  - *"Create a quick prompt for me, I want an agent that reviews my PRs and…"*
+  If the model is unavailable or the rewrite looks wrong, the text inserts as dictated — the feature can only add value, never lose your words.
+- **Personal dictionary** (Settings): one term per line — names, jargon, acronyms. Biases recognition from the next dictation.
+- **Filler removal**: "um okay so basically…" → "Okay, so basically…". Toggleable.
+- All settings save automatically — there is no Save button.
+
+## Verification harnesses (no permissions needed)
 
 ```bash
-CODESIGN_IDENTITY="Discotype Dev" Scripts/build-app.sh
+swift run discotype-tests                      # unit tests
+.build/debug/Discotype --selftest              # end-to-end: say → SpeechAnalyzer → cleanup, with timings
+.build/debug/Discotype --fm-check              # is the on-device LLM available?
+.build/debug/Discotype --render-hud out.png    # render the HUD for design review
+.build/debug/Discotype --render-settings out.png
 ```
 
-Grants then survive rebuilds. If TCC entries ever get stale: `tccutil reset Accessibility com.ibrahim.discotype`.
-
-### ⌘X and Cut
-
-The hotkey is registered with Carbon `RegisterEventHotKey`, which consumes the keystroke — so while Discotype runs, **⌘X no longer performs Cut in any app**. That is the intended toggle behavior; pick ⌥Space, ⌃⌥D, or F19 in Settings if you want Cut back.
-
-## Verification harnesses
-
-```bash
-swift run discotype-tests                     # unit tests (TextCleaner)
-.build/debug/Discotype --selftest             # headless end-to-end: `say` → SpeechAnalyzer → cleanup
-.build/debug/Discotype --render-hud hud.png   # render the HUD to a PNG for design review
-```
-
-(`swift test` is a no-op under Command Line Tools — it silently runs zero swift-testing tests, hence the executable runner.)
+(`swift test` runs zero tests under Command Line Tools — hence the executable runner.)
 
 ## Architecture
 
 ```
 Sources/Discotype/            thin executable (main.swift, CLI flags)
 Sources/DiscotypeCore/
-  Hotkey/HotkeyManager        Carbon RegisterEventHotKey — no permissions, consumes the key
-  Audio/AudioCaptureService   AVAudioEngine tap → AVAudioConverter → engine format; throttled RMS levels
-  Transcription/
-    TranscriptionEngine       protocol seam — swap the backend without touching anything else
-    AppleSpeechEngine         SpeechAnalyzer + SpeechTranscriber (.progressiveTranscription, volatile results)
-  Cleanup/TextCleaner         conservative rules: fillers, repeats, whitespace, caps, terminal punctuation
-  Injection/TextInjector      AX insert (verified) → ⌘V paste (clipboard snapshot/restore, change-count guarded)
-                              → unicode typing fallback; transient pasteboard marker for clipboard managers
-  HUD/                        non-activating NSPanel (never steals focus), SwiftUI neon waveform
-  Settings/                   UserDefaults-backed; hotkey, fillers, insertion method
-  App/DictationCoordinator    idle → recording → finishing state machine
+  Hotkey/                     Carbon hotkey (combos) + CGEventTap on a dedicated
+                              thread (bare-modifier double-tap), pure tested detector
+  Audio/                      AVAudioEngine tap → converter → engine format; throttled levels
+  Transcription/              TranscriptionEngine seam; AppleSpeechEngine
+                              (SpeechAnalyzer, volatile+fast results, model kept hot,
+                              contextual-strings dictionary bias)
+  Cleanup/TextCleaner         conservative rules — never rephrases
+  AICommands/                 CommandDetector (pure, tested) + LocalRewriter
+                              (FoundationModels, guarded: timeout, preamble & length checks)
+  Injection/TextInjector      AX insert (verified) → unicode typing; ⌘V as explicit option;
+                              clipboard snapshot/restore, change-count guarded
+  HUD/                        non-activating NSPanel (never steals focus), neon Canvas waveform
+  Settings/                   UserDefaults-backed, save-on-change
+  App/DictationCoordinator    state machine + silence watchdog
 ```
 
-Design decisions and trade-offs are commented at the top of each file.
+Idle cost is ~zero: no audio engine, no timers, no animation while not dictating. The one exception: the double-tap-Control preset keeps a listen-only event tap alive (microseconds per keystroke).
 
-## V1 scope
+## Roadmap (from studying Wispr Flow — all locally feasible)
 
-Included: global toggle hotkey, live on-device transcription, cleanup, injection into the focused app, reactive HUD, settings, headless self-tests.
-
-Deliberately deferred: personal dictionary (hook exists — `AnalysisContext.contextualStrings`), history, voice commands ("new paragraph"), multi-language switching, FoundationModels-based cleanup, context-aware formatting per app, launch-at-login.
+Self-correction resolution ("…at 5, no wait, 6pm" → "6pm") · per-app formatting (Slack casual / email formal / code mode) · command mode on selected text ("make this formal") · voice snippets ("insert my calendar link") · dictionary auto-learn from your corrections · history & scratchpad · multilingual picker. Notably: Wispr has **no offline mode at all** — this app's fully local pipeline is the point.

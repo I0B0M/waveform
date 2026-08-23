@@ -7,8 +7,8 @@ public enum HUDSnapshot {
     public static func renderSettingsAndExit(to path: String) {
         _ = NSApplication.shared
         let view = SettingsView(onHotkeyChange: {})
-            .frame(width: 440, height: 470)
-        render(view: view, size: NSSize(width: 440, height: 470), to: path)
+            .frame(width: 460, height: 700)
+        render(view: view, size: NSSize(width: 460, height: 700), to: path)
     }
 
     @MainActor

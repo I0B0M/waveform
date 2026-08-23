@@ -7,6 +7,8 @@ struct SettingsView: View {
     @State private var removeFillers: Bool = AppSettings.shared.removeFillers
     @State private var insertionMethod: TextInjector.Method = AppSettings.shared.insertionMethod
     @State private var silenceTimeout: Double = AppSettings.shared.silenceTimeout
+    @State private var aiCommandsEnabled: Bool = AppSettings.shared.aiCommandsEnabled
+    @State private var dictionaryText: String = AppSettings.shared.dictionaryText
 
     private static let silenceChoices: [(label: String, value: Double)] = [
         ("Off (manual only)", 0), ("1.5 seconds", 1.5), ("2 seconds", 2),
@@ -79,7 +81,29 @@ struct SettingsView: View {
             }
 
             Section {
-                Text("Everything runs on-device. Audio and text never leave this Mac.")
+                Toggle("AI commands (on-device Apple Intelligence)", isOn: $aiCommandsEnabled)
+                    .onChange(of: aiCommandsEnabled) { _, newValue in
+                        AppSettings.shared.aiCommandsEnabled = newValue
+                    }
+                Text("Start a dictation with “make this better, …” or “create a prompt, …” and the rest gets restructured by Apple's local model before inserting. Nothing goes to the cloud.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Personal dictionary") {
+                TextEditor(text: $dictionaryText)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(height: 90)
+                    .onChange(of: dictionaryText) { _, newValue in
+                        AppSettings.shared.dictionaryText = newValue
+                    }
+                Text("One term per line — names, jargon, acronyms (e.g. “Archangel”, “NestJS”). Biases recognition from the next dictation on.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Text("Changes save automatically — there is no Save button. Everything runs on-device; audio and text never leave this Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

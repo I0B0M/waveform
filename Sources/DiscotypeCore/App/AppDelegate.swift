@@ -1,8 +1,9 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 
 @MainActor
-public final class AppDelegate: NSObject, NSApplicationDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public override init() { super.init() }
 
     private var statusItem: NSStatusItem?
@@ -19,10 +20,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpStatusItem()
         registerHotkey()
 
-        // Warm up: check/download the speech model assets once, off the critical path.
+        // Warm up: speech model assets + the on-device LLM, off the critical path.
         Task {
             await coordinator.prepareEngine()
             self.refreshMenu()
+        }
+        Task.detached(priority: .utility) {
+            LocalRewriter.prewarm()
         }
     }
 
@@ -79,9 +83,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshMenu()
     }
 
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshMenu()
+    }
+
     private func refreshMenu() {
         guard let item = statusItem else { return }
         let menu = NSMenu()
+        menu.delegate = self
 
         let preset = AppSettings.shared.hotkeyPreset
         let toggleItem = NSMenuItem(
@@ -110,6 +119,27 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        // Live permission status — the two things that silently break
+        // dictation when missing. Click either to open its settings pane.
+        let micOK = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        let axOK = TextInjector.isTrusted(promptIfNeeded: false)
+        let micItem = NSMenuItem(
+            title: micOK ? "Microphone: ✓ granted" : "Microphone: ✗ not granted — click to fix",
+            action: micOK ? nil : #selector(openMicSettings),
+            keyEquivalent: ""
+        )
+        micItem.target = self
+        menu.addItem(micItem)
+        let axItem = NSMenuItem(
+            title: axOK ? "Accessibility: ✓ granted" : "Accessibility: ✗ not granted — click to fix",
+            action: axOK ? nil : #selector(openAccessibilitySettings),
+            keyEquivalent: ""
+        )
+        axItem.target = self
+        menu.addItem(axItem)
+
+        menu.addItem(.separator())
+
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -120,6 +150,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
 
         item.menu = menu
+    }
+
+    @objc private func openMicSettings() {
+        NSWorkspace.shared.open(
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
+        )
+    }
+
+    @objc private func openAccessibilitySettings() {
+        NSWorkspace.shared.open(
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        )
     }
 
     @objc private func toggleDictation() {
@@ -134,7 +176,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             let hosting = NSHostingController(rootView: view)
             let window = NSWindow(contentViewController: hosting)
             window.title = "Discotype Settings"
-            window.setContentSize(NSSize(width: 440, height: 470))
+            window.setContentSize(NSSize(width: 460, height: 700))
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window

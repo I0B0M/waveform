@@ -11,6 +11,7 @@ struct HUDView: View {
         switch state.phase {
         case .listening: return "LISTENING"
         case .finalizing: return "FINALIZING"
+        case .polishing: return "POLISHING"
         case .noAccessibility: return "COPIED — PRESS ⌘V"
         case .error(let message): return message.uppercased()
         }
@@ -20,6 +21,7 @@ struct HUDView: View {
         switch state.phase {
         case .listening: return Color(red: 1.00, green: 0.45, blue: 0.10)
         case .finalizing: return Color(red: 0.16, green: 0.85, blue: 1.00)
+        case .polishing: return Color(red: 0.72, green: 0.20, blue: 1.00)
         case .noAccessibility: return Color(red: 1.00, green: 0.80, blue: 0.20)
         case .error: return Color(red: 1.00, green: 0.30, blue: 0.30)
         }
@@ -29,7 +31,7 @@ struct HUDView: View {
         VStack(spacing: 6) {
             WaveformView(
                 level: state.level,
-                animating: state.phase == .listening || state.phase == .finalizing,
+                animating: state.phase == .listening || state.phase == .finalizing || state.phase == .polishing,
                 frozenTime: frozenTime
             )
             .frame(height: 72)

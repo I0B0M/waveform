@@ -6,6 +6,7 @@ final class HUDState: ObservableObject {
     enum Phase: Equatable {
         case listening
         case finalizing
+        case polishing         // on-device AI rewrite in progress
         case noAccessibility   // text was copied; user must press ⌘V themselves
         case error(String)
     }

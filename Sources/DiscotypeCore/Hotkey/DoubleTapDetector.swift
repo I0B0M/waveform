@@ -18,7 +18,11 @@ struct DoubleTapDetector {
         case contamination       // any other key/click/scroll/modifier
     }
 
-    var window: TimeInterval = 0.45
+    var window: TimeInterval
+
+    init(window: TimeInterval = 0.45) {
+        self.window = window
+    }
 
     private var isDown = false
     private var holdContaminated = false

@@ -85,7 +85,10 @@ actor AppleSpeechEngine: TranscriptionEngine {
 
     // MARK: - Live session
 
-    func startSession(onUpdate: @escaping @Sendable (TranscriptionUpdate) -> Void) async throws {
+    func startSession(
+        contextualStrings: [String],
+        onUpdate: @escaping @Sendable (TranscriptionUpdate) -> Void
+    ) async throws {
         guard prepared else { throw EngineError.notPrepared }
         await cancelSession()
 
@@ -94,6 +97,12 @@ actor AppleSpeechEngine: TranscriptionEngine {
         }
         let transcriber = Self.makeTranscriber(locale: supported)
         let analyzer = SpeechAnalyzer(modules: [transcriber], options: analyzerOptions)
+
+        if !contextualStrings.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = contextualStrings
+            try? await analyzer.setContext(context)
+        }
 
         let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
         self.transcriber = transcriber

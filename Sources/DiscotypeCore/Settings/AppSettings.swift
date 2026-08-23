@@ -12,6 +12,8 @@ final class AppSettings {
         static let removeFillers = "removeFillers"
         static let insertionMethod = "insertionMethod"
         static let silenceTimeout = "silenceTimeout"
+        static let dictionaryTerms = "dictionaryTerms"
+        static let aiCommandsEnabled = "aiCommandsEnabled"
     }
 
     var hotkeyPreset: HotkeyPreset {
@@ -40,6 +42,30 @@ final class AppSettings {
             return defaults.double(forKey: Key.silenceTimeout)
         }
         set { defaults.set(newValue, forKey: Key.silenceTimeout) }
+    }
+
+    /// Personal dictionary: one term per line (names, jargon, acronyms).
+    /// Fed to the recognizer as contextual bias strings.
+    var dictionaryText: String {
+        get { defaults.string(forKey: Key.dictionaryTerms) ?? "" }
+        set { defaults.set(newValue, forKey: Key.dictionaryTerms) }
+    }
+
+    var dictionaryTerms: [String] {
+        dictionaryText
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// Spoken commands like "make this better, …" rewritten by the on-device
+    /// Apple Intelligence model. Local only; off means commands insert verbatim.
+    var aiCommandsEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.aiCommandsEnabled) == nil { return true }
+            return defaults.bool(forKey: Key.aiCommandsEnabled)
+        }
+        set { defaults.set(newValue, forKey: Key.aiCommandsEnabled) }
     }
 
     var removeFillers: Bool {

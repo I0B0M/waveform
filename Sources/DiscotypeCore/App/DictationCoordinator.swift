@@ -21,6 +21,7 @@ final class DictationCoordinator {
     private let audio = AudioCaptureService()
     private let injector = TextInjector()
     private let hud = HUDController()
+    private let rewriter = LocalRewriter()
 
     private var enginePrepared = false
     private var prepareFailure: String?
@@ -107,7 +108,7 @@ final class DictationCoordinator {
         lastVoiceActivityAt = ProcessInfo.processInfo.systemUptime
 
         do {
-            try await engine.startSession { update in
+            try await engine.startSession(contextualStrings: AppSettings.shared.dictionaryTerms) { update in
                 Task { @MainActor [weak self] in
                     if update.display != hudState.transcript {
                         hudState.transcript = update.display
@@ -155,12 +156,21 @@ final class DictationCoordinator {
         do {
             let raw = try await engine.finishSession()
             let cleaner = TextCleaner(removeFillers: AppSettings.shared.removeFillers)
-            let cleaned = cleaner.clean(raw)
+            var cleaned = cleaner.clean(raw)
 
             if cleaned.isEmpty {
                 hud.hide()
                 state = .idle
                 return
+            }
+
+            // Spoken AI command ("make this better, …")? Rewrite on-device;
+            // any failure falls back to the payload as dictated.
+            if AppSettings.shared.aiCommandsEnabled,
+               LocalRewriter.isAvailable,
+               let command = CommandDetector.detect(in: cleaned) {
+                hud.state.phase = .polishing
+                cleaned = await rewriter.rewrite(command) ?? command.payload
             }
 
             let outcome = await injector.inject(cleaned, method: AppSettings.shared.insertionMethod)

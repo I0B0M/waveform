@@ -67,7 +67,7 @@ public enum SelfTest {
         let sessionStart = CACurrentMediaTime()
         let firstResultAt = LockedBox<Double?>(nil)
 
-        try await engine.startSession { update in
+        try await engine.startSession(contextualStrings: []) { update in
             if firstResultAt.value == nil {
                 firstResultAt.value = CACurrentMediaTime()
             }

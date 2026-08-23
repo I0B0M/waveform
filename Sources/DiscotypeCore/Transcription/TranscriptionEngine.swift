@@ -21,8 +21,13 @@ protocol TranscriptionEngine: AnyObject {
     /// The audio format buffers should be delivered in, once prepared.
     var preferredAudioFormat: AVAudioFormat? { get async }
 
-    /// Begin a live session. `onUpdate` is called on an arbitrary executor.
-    func startSession(onUpdate: @escaping @Sendable (TranscriptionUpdate) -> Void) async throws
+    /// Begin a live session. `contextualStrings` bias recognition toward the
+    /// user's personal dictionary (names, jargon). `onUpdate` is called on an
+    /// arbitrary executor.
+    func startSession(
+        contextualStrings: [String],
+        onUpdate: @escaping @Sendable (TranscriptionUpdate) -> Void
+    ) async throws
 
     /// Feed one audio buffer (already in `preferredAudioFormat`).
     func feed(_ buffer: AVAudioPCMBuffer)

@@ -69,11 +69,8 @@ final class HotkeyManager {
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
 
-    // Event-tap path.
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-    private var detector = DoubleTapDetector()
-    private var controlWasDown = false
+    // Event-tap path (runs on its own thread — see ModifierTapController).
+    private var tapController: ModifierTapController?
 
     enum HotkeyError: Error, LocalizedError {
         case registrationFailed(OSStatus)
@@ -93,7 +90,16 @@ final class HotkeyManager {
         unregister()
 
         if preset.isBareModifier {
-            try startEventTap()
+            // The trigger closure is @Sendable but always dispatched onto the
+            // main queue by the controller, so hopping back onto the main
+            // actor here is safe.
+            let controller = ModifierTapController { [weak self] in
+                Task { @MainActor in
+                    self?.onHotkey?()
+                }
+            }
+            try controller.start()
+            tapController = controller
             return
         }
         installHandlerIfNeeded()
@@ -119,16 +125,8 @@ final class HotkeyManager {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
         }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
-            runLoopSource = nil
-        }
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            eventTap = nil
-        }
-        detector = DoubleTapDetector()
-        controlWasDown = false
+        tapController?.stop()
+        tapController = nil
     }
 
     // MARK: - Carbon path
@@ -157,88 +155,4 @@ final class HotkeyManager {
         )
     }
 
-    // MARK: - Event-tap path (double-tap Control)
-
-    private func startEventTap() throws {
-        let interesting: [CGEventType] = [
-            .flagsChanged, .keyDown,
-            .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel,
-        ]
-        var mask: CGEventMask = 0
-        for type in interesting {
-            mask |= CGEventMask(1) << CGEventMask(type.rawValue)
-        }
-
-        let selfPointer = Unmanaged.passUnretained(self).toOpaque()
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: { _, type, event, userInfo in
-                guard let userInfo else { return Unmanaged.passUnretained(event) }
-                let manager = Unmanaged<HotkeyManager>.fromOpaque(userInfo).takeUnretainedValue()
-                // Extract primitives before hopping threads; CGEvents must not
-                // be retained past the callback.
-                let flags = event.flags
-                let seconds = Double(event.timestamp) / 1_000_000_000
-                DispatchQueue.main.async {
-                    manager.handleTapEvent(type: type, flags: flags, timestamp: seconds)
-                }
-                return Unmanaged.passUnretained(event)
-            },
-            userInfo: selfPointer
-        ) else {
-            throw HotkeyError.accessibilityRequired
-        }
-
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-        eventTap = tap
-        runLoopSource = source
-    }
-
-    private func handleTapEvent(type: CGEventType, flags: CGEventFlags, timestamp: TimeInterval) {
-        switch type {
-        case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            // The system paused us (slow callback or secure input); resume.
-            if let tap = eventTap {
-                CGEvent.tapEnable(tap: tap, enable: true)
-            }
-            return
-
-        case .flagsChanged:
-            let relevant: CGEventFlags = [
-                .maskControl, .maskShift, .maskCommand, .maskAlternate, .maskSecondaryFn,
-            ]
-            let active = flags.intersection(relevant)
-            let controlIsDown = active.contains(.maskControl)
-            let controlIsAlone = active == .maskControl
-
-            if controlIsDown && !controlWasDown {
-                controlWasDown = true
-                fire(detector.process(controlIsAlone ? .modifierDown : .contamination, at: timestamp))
-            } else if controlIsDown && controlWasDown && !controlIsAlone {
-                // A second modifier joined mid-hold (⌃⌥ etc.).
-                fire(detector.process(.contamination, at: timestamp))
-            } else if !controlIsDown && controlWasDown {
-                controlWasDown = false
-                fire(detector.process(.modifierUp, at: timestamp))
-            } else if !controlIsDown && !active.isEmpty {
-                // Some other lone modifier tapped between our taps.
-                fire(detector.process(.contamination, at: timestamp))
-            }
-
-        default:
-            // Keys, clicks, scrolls — contaminate holds and pending taps.
-            fire(detector.process(.contamination, at: timestamp))
-        }
-    }
-
-    private func fire(_ triggered: Bool) {
-        if triggered {
-            onHotkey?()
-        }
-    }
 }
