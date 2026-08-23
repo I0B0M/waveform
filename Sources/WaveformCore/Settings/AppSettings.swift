@@ -14,6 +14,7 @@ final class AppSettings {
         static let silenceTimeout = "silenceTimeout"
         static let dictionaryTerms = "dictionaryTerms"
         static let aiCommandsEnabled = "aiCommandsEnabled"
+        static let saveHistory = "saveHistory"
     }
 
     var hotkeyPreset: HotkeyPreset {
@@ -66,6 +67,15 @@ final class AppSettings {
             return defaults.bool(forKey: Key.aiCommandsEnabled)
         }
         set { defaults.set(newValue, forKey: Key.aiCommandsEnabled) }
+    }
+
+    /// Keep a local, capped dictation history (never leaves the Mac).
+    var saveHistory: Bool {
+        get {
+            if defaults.object(forKey: Key.saveHistory) == nil { return true }
+            return defaults.bool(forKey: Key.saveHistory)
+        }
+        set { defaults.set(newValue, forKey: Key.saveHistory) }
     }
 
     var removeFillers: Bool {

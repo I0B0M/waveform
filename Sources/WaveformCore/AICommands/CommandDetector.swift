@@ -42,6 +42,33 @@ enum CommandDetector {
         return nil
     }
 
+    /// Selection mode: the user had text selected and spoke a short
+    /// imperative ("make this more organized", "turn this into bullet
+    /// points", "translate to German"). Returns the instruction, or nil when
+    /// the speech looks like content rather than an instruction.
+    static func selectionInstruction(in text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var words = trimmed.lowercased()
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+        guard !words.isEmpty else { return nil }
+
+        // Tolerate polite lead-ins.
+        while let first = words.first, ["please", "can", "you", "could"].contains(first) {
+            words.removeFirst()
+        }
+        guard let verb = words.first, (2...24).contains(words.count) else { return nil }
+
+        let instructionVerbs: Set<String> = [
+            "make", "turn", "rewrite", "rework", "reword", "summarize", "summarise",
+            "shorten", "expand", "fix", "improve", "clean", "translate", "convert",
+            "simplify", "formalize", "formalise", "organize", "organise", "structure",
+            "polish", "tighten", "bulletize", "condense",
+        ]
+        guard instructionVerbs.contains(verb) else { return nil }
+        return trimmed
+    }
+
     private static func firstMatchPayload(of pattern: String, in text: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)

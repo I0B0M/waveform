@@ -85,6 +85,27 @@ final class TextInjector {
         return outcome
     }
 
+    /// The selected text in the focused element of the frontmost app, when
+    /// readable (native apps). Used for selection command mode.
+    func readSelectedText() -> String? {
+        guard Self.isTrusted(promptIfNeeded: false) else { return nil }
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedRef
+        ) == .success, let focusedRef else { return nil }
+        let focused = focusedRef as! AXUIElement
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            focused,
+            kAXSelectedTextAttribute as CFString,
+            &value
+        ) == .success, let text = value as? String, !text.isEmpty else { return nil }
+        return text
+    }
+
     // MARK: - AX path
 
     private func injectViaAccessibility(_ text: String) -> Bool {

@@ -140,7 +140,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
 
         menu.addItem(.separator())
 
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = NSMenuItem(title: "Open Waveform…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
@@ -170,13 +170,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
 
     @objc private func openSettings() {
         if settingsWindow == nil {
-            let view = SettingsView(onHotkeyChange: { [weak self] in
+            let view = DashboardView(onHotkeyChange: { [weak self] in
                 self?.hotkeyPresetChanged()
             })
             let hosting = NSHostingController(rootView: view)
             let window = NSWindow(contentViewController: hosting)
-            window.title = "Waveform Settings"
-            window.setContentSize(NSSize(width: 460, height: 700))
+            window.title = "Waveform"
+            window.setContentSize(NSSize(width: 840, height: 580))
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window

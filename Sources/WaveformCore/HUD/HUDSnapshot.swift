@@ -6,9 +6,9 @@ public enum HUDSnapshot {
     @MainActor
     public static func renderSettingsAndExit(to path: String) {
         _ = NSApplication.shared
-        let view = SettingsView(onHotkeyChange: {})
-            .frame(width: 460, height: 700)
-        render(view: view, size: NSSize(width: 460, height: 700), to: path)
+        let view = DashboardView(onHotkeyChange: {})
+            .frame(width: 840, height: 580)
+        render(view: view, size: NSSize(width: 840, height: 580), to: path)
     }
 
     @MainActor
@@ -32,9 +32,9 @@ public enum HUDSnapshot {
             HUDView(state: state, frozenTime: 1.85)
                 .padding(40)
         }
-        .frame(width: 560, height: 260)
+        .frame(width: 560, height: 220)
 
-        render(view: scene, size: NSSize(width: 560, height: 260), to: path)
+        render(view: scene, size: NSSize(width: 560, height: 220), to: path)
     }
 
     @MainActor

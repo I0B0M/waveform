@@ -27,6 +27,11 @@ final class DictationCoordinator {
     private var prepareFailure: String?
     private var promptedAccessibility = false
 
+    // Per-session context.
+    private var sessionStartedAt: TimeInterval = 0
+    private var selectionAtStart: String?
+    private var targetAppName: String?
+
     // Silence auto-stop state.
     private var lastVoiceActivityAt: TimeInterval = 0
     private var sawSpeech = false
@@ -43,6 +48,8 @@ final class DictationCoordinator {
     // MARK: - Engine warm-up
 
     func prepareEngine() async {
+        hud.onFinish = { [weak self] in self?.toggle() }
+        hud.onCancel = { [weak self] in Task { await self?.cancelDictation() } }
         hud.preload()
         do {
             try await engine.prepare()
@@ -101,6 +108,12 @@ final class DictationCoordinator {
                 return
             }
         }
+
+        // Selection command mode: capture what's selected in the target app
+        // BEFORE the HUD appears, so "make this more organized" can rewrite it.
+        selectionAtStart = injector.readSelectedText()
+        targetAppName = NSWorkspace.shared.frontmostApplication?.localizedName
+        sessionStartedAt = ProcessInfo.processInfo.systemUptime
 
         hud.show()
         let hudState = hud.state
@@ -164,9 +177,27 @@ final class DictationCoordinator {
                 return
             }
 
+            // Selection command mode: text was selected and the user spoke a
+            // short instruction — transform the SELECTION, not the speech.
+            if AppSettings.shared.aiCommandsEnabled,
+               LocalRewriter.isAvailable,
+               let selection = selectionAtStart,
+               let instruction = CommandDetector.selectionInstruction(in: cleaned) {
+                hud.state.phase = .polishing
+                if let transformed = await rewriter.transform(selection: selection, instruction: instruction) {
+                    cleaned = transformed
+                } else {
+                    // Leave the user's selection untouched rather than
+                    // overwriting it with the spoken instruction.
+                    hud.state.phase = .error("Rewrite failed — selection left unchanged")
+                    hideHUDAfterDelay()
+                    state = .idle
+                    return
+                }
+            }
             // Spoken AI command ("make this better, …")? Rewrite on-device;
             // any failure falls back to the payload as dictated.
-            if AppSettings.shared.aiCommandsEnabled,
+            else if AppSettings.shared.aiCommandsEnabled,
                LocalRewriter.isAvailable,
                let command = CommandDetector.detect(in: cleaned) {
                 hud.state.phase = .polishing
@@ -174,6 +205,13 @@ final class DictationCoordinator {
             }
 
             let outcome = await injector.inject(cleaned, method: AppSettings.shared.insertionMethod)
+            if AppSettings.shared.saveHistory {
+                HistoryStore.shared.add(
+                    text: cleaned,
+                    duration: ProcessInfo.processInfo.systemUptime - sessionStartedAt,
+                    appName: targetAppName
+                )
+            }
             switch outcome {
             case .insertedDirectly, .pasted, .typed:
                 hud.hide()
@@ -187,6 +225,17 @@ final class DictationCoordinator {
             NSLog("Waveform: finish failed: \(error)")
             hideHUDAfterDelay()
         }
+        state = .idle
+    }
+
+    /// ✕ on the HUD: throw the session away — nothing is inserted.
+    func cancelDictation() async {
+        guard state == .recording || state == .starting else { return }
+        state = .finishing
+        stopSilenceWatchdog()
+        audio.stop()
+        await engine.cancelSession()
+        hud.hide()
         state = .idle
     }
 

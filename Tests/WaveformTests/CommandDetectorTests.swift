@@ -33,6 +33,21 @@ struct CommandDetectorTests {
         #expect(CommandDetector.detect(in: "I will make this project better over time.") == nil)
     }
 
+    @Test("selection instructions are recognized")
+    func selectionInstructions() {
+        #expect(CommandDetector.selectionInstruction(in: "Make this more organized.") != nil)
+        #expect(CommandDetector.selectionInstruction(in: "please make this professional") != nil)
+        #expect(CommandDetector.selectionInstruction(in: "Turn this into bullet points") != nil)
+        #expect(CommandDetector.selectionInstruction(in: "Summarize this in one sentence") != nil)
+    }
+
+    @Test("normal speech is not a selection instruction")
+    func selectionNonInstructions() {
+        #expect(CommandDetector.selectionInstruction(in: "Okay so basically we need to ship this by Friday and tell the client.") == nil)
+        #expect(CommandDetector.selectionInstruction(in: "The meeting is at five.") == nil)
+        #expect(CommandDetector.selectionInstruction(in: "Made a mistake in the report") == nil)
+    }
+
     @Test("command with no payload is not a command")
     func bareCommand() {
         #expect(CommandDetector.detect(in: "Make this better.") == nil)

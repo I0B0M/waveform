@@ -56,6 +56,39 @@ final class LocalRewriter {
         }
     }
 
+    private static let transformInstructions = """
+        You edit text. Apply the user's instruction to the provided text. \
+        Keep everything the instruction doesn't cover unchanged — same facts, \
+        same voice. Do not comment on the text or the instruction. Reply with \
+        ONLY the edited text — no preamble, no quotes.
+        """
+
+    /// Selection mode: apply a spoken instruction to selected text.
+    /// Returns nil when the caller should leave the selection untouched.
+    func transform(selection: String, instruction: String) async -> String? {
+        guard Self.isAvailable else { return nil }
+        do {
+            let output: String = try await withThrowingTimeout(seconds: 12) {
+                let session = LanguageModelSession(instructions: Self.transformInstructions)
+                let response = try await session.respond(
+                    to: "Instruction: \(instruction)\n\nText:\n\(selection)"
+                )
+                return response.content
+            }
+            let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let lowered = text.lowercased()
+            let preambles = ["here is", "here's", "sure,", "sure!", "certainly", "as an ai", "i can't", "i cannot"]
+            guard !preambles.contains(where: { lowered.hasPrefix($0) }) else { return nil }
+            let ratio = Double(text.count) / Double(max(selection.count, 1))
+            guard ratio >= 0.1, ratio <= 5.0 else { return nil }
+            return text
+        } catch {
+            NSLog("Waveform: selection transform failed (%@)", String(describing: error))
+            return nil
+        }
+    }
+
     // MARK: - Output guards
 
     private static func validated(_ output: String, against command: DictationCommand) -> String? {

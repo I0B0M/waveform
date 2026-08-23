@@ -1,11 +1,20 @@
 import SwiftUI
 
-/// The full HUD card: dark glass capsule, neon waveform, live transcript line,
-/// and a phase indicator. Sized for the bottom-center of the screen.
+/// The floating pill (Wispr-Flow-style ergonomics, disco identity):
+/// ✕ cancel on the left, ✓ finish on the right, neon waveform in the middle,
+/// live transcript below it. Draggable anywhere on its body; buttons are only
+/// active while listening.
 struct HUDView: View {
     @ObservedObject var state: HUDState
+    var onFinish: (() -> Void)? = nil
+    var onCancel: (() -> Void)? = nil
     /// Fixed time for deterministic offscreen snapshots.
     var frozenTime: Double? = nil
+
+    private static let orange = Color(red: 1.00, green: 0.45, blue: 0.10)
+    private static let violet = Color(red: 0.72, green: 0.20, blue: 1.00)
+    private static let cyan = Color(red: 0.16, green: 0.85, blue: 1.00)
+    private static let pink = Color(red: 1.00, green: 0.18, blue: 0.57)
 
     private var statusText: String {
         switch state.phase {
@@ -19,77 +28,111 @@ struct HUDView: View {
 
     private var statusColor: Color {
         switch state.phase {
-        case .listening: return Color(red: 1.00, green: 0.45, blue: 0.10)
-        case .finalizing: return Color(red: 0.16, green: 0.85, blue: 1.00)
-        case .polishing: return Color(red: 0.72, green: 0.20, blue: 1.00)
+        case .listening: return Self.orange
+        case .finalizing: return Self.cyan
+        case .polishing: return Self.violet
         case .noAccessibility: return Color(red: 1.00, green: 0.80, blue: 0.20)
         case .error: return Color(red: 1.00, green: 0.30, blue: 0.30)
         }
     }
 
+    private var isActive: Bool {
+        state.phase == .listening
+    }
+
     var body: some View {
-        VStack(spacing: 6) {
-            WaveformView(
-                level: state.level,
-                animating: state.phase == .listening || state.phase == .finalizing || state.phase == .polishing,
-                frozenTime: frozenTime
+        HStack(spacing: 12) {
+            roundButton(
+                symbol: "xmark",
+                color: Self.pink,
+                enabled: isActive,
+                action: { onCancel?() }
             )
-            .frame(height: 72)
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
+            .help("Cancel — discard this dictation")
 
-            HStack(spacing: 10) {
-                // Pulsing record dot.
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 7, height: 7)
-                    .shadow(color: statusColor.opacity(0.9), radius: 4)
+            VStack(spacing: 4) {
+                WaveformView(
+                    level: state.level,
+                    animating: state.phase != .noAccessibility,
+                    frozenTime: frozenTime
+                )
+                .frame(height: 44)
 
-                Text(statusText)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .tracking(3)
-                    .foregroundStyle(statusColor.opacity(0.95))
-                    .shadow(color: statusColor.opacity(0.7), radius: 6)
-
-                Spacer(minLength: 0)
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: statusColor.opacity(0.9), radius: 4)
+                    Text(statusText)
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .tracking(2.5)
+                        .foregroundStyle(statusColor.opacity(0.95))
+                    Spacer(minLength: 0)
+                    Text(transcriptDisplay)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(state.transcript.isEmpty ? 0.35 : 0.92))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
             }
-            .padding(.horizontal, 22)
 
-            Text(transcriptDisplay)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(state.transcript.isEmpty ? 0.35 : 0.92))
-                .lineLimit(2)
-                .truncationMode(.head)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 22)
-                .padding(.bottom, 16)
+            roundButton(
+                symbol: "checkmark",
+                color: Self.cyan,
+                enabled: isActive,
+                action: { onFinish?() }
+            )
+            .help("Finish now and insert")
         }
-        .frame(width: 480)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(width: 460)
         .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(Color(red: 0.03, green: 0.01, blue: 0.09).opacity(0.92))
+            Capsule(style: .continuous)
+                .fill(Color(red: 0.03, green: 0.01, blue: 0.09).opacity(0.94))
         )
         .overlay(
-            // Thin chromatic rim — the "premium disco" edge.
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
+            Capsule(style: .continuous)
                 .strokeBorder(
                     LinearGradient(
                         colors: [
-                            Color(red: 1.00, green: 0.45, blue: 0.10).opacity(0.55),
-                            Color(red: 0.72, green: 0.20, blue: 1.00).opacity(0.55),
-                            Color(red: 0.16, green: 0.85, blue: 1.00).opacity(0.55),
+                            Self.orange.opacity(0.6),
+                            Self.pink.opacity(0.5),
+                            Self.violet.opacity(0.6),
+                            Self.cyan.opacity(0.6),
                         ],
                         startPoint: .leading,
                         endPoint: .trailing
                     ),
-                    lineWidth: 1
+                    lineWidth: 1.2
                 )
         )
-        .shadow(color: Color(red: 0.72, green: 0.20, blue: 1.00).opacity(0.25), radius: 24, y: 6)
+        .shadow(color: Self.violet.opacity(0.30), radius: 22, y: 6)
     }
 
     private var transcriptDisplay: String {
         state.transcript.isEmpty ? "Speak — text appears here…" : state.transcript
+    }
+
+    private func roundButton(
+        symbol: String,
+        color: Color,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(enabled ? color : Color.white.opacity(0.18))
+                .frame(width: 26, height: 26)
+                .background(
+                    Circle().fill(Color.white.opacity(enabled ? 0.08 : 0.03))
+                )
+                .overlay(
+                    Circle().strokeBorder(color.opacity(enabled ? 0.5 : 0.1), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 }
