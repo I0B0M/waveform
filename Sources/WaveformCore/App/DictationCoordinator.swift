@@ -32,6 +32,9 @@ final class DictationCoordinator {
     private var selectionAtStart: String?
     private var targetAppName: String?
     private var targetBundleId: String?
+    /// Set by the HUD's ✨ button: treat this dictation as a command of this
+    /// kind regardless of what the words look like.
+    private var forcedCommand: DictationCommand.Kind?
 
     // Silence auto-stop state.
     private var lastVoiceActivityAt: TimeInterval = 0
@@ -50,6 +53,9 @@ final class DictationCoordinator {
 
     func prepareEngine() async {
         hud.onFinish = { [weak self] in self?.toggle() }
+        hud.onPolish = { [weak self] promptMode in
+            self?.finishWithPolish(promptMode ? .createPrompt : .improve)
+        }
         hud.onCancel = { [weak self] in Task { await self?.cancelDictation() } }
         hud.preload()
         do {
@@ -123,7 +129,11 @@ final class DictationCoordinator {
         lastVoiceActivityAt = ProcessInfo.processInfo.systemUptime
 
         do {
-            try await engine.startSession(contextualStrings: AppSettings.shared.dictionaryTerms) { update in
+            // Bias recognition toward the command words too — without this the
+            // recognizer hears "prompt" as "prom" and the command silently
+            // looks like ordinary speech.
+            let hints = AppSettings.shared.dictionaryTerms + CommandDetector.vocabularyHints
+            try await engine.startSession(contextualStrings: hints) { update in
                 Task { @MainActor [weak self] in
                     if update.display != hudState.transcript {
                         hudState.finalizedText = update.finalized
@@ -187,8 +197,24 @@ final class DictationCoordinator {
             // exclusive: a snippet is not a command, a command is not speech.
             var failureNotice: String?
 
+            // 0. The ✨ button was pressed — an explicit, unmistakable request.
+            if let kind = forcedCommand {
+                forcedCommand = nil
+                if !LocalRewriter.isAvailable {
+                    failureNotice = "Apple Intelligence is off — inserted as spoken"
+                } else {
+                    hud.state.phase = .polishing
+                    let subject = selectionAtStart ?? cleaned
+                    let command = DictationCommand(kind: kind, payload: subject, wasExplicit: true)
+                    if let rewritten = await rewriter.rewrite(command) {
+                        cleaned = rewritten
+                    } else {
+                        failureNotice = "Rewrite failed — inserted as spoken"
+                    }
+                }
+            }
             // 1. Voice snippet ("insert my calendar link").
-            if let expansion = SnippetMatcher.expansion(for: cleaned, in: AppSettings.shared.snippets) {
+            else if let expansion = SnippetMatcher.expansion(for: cleaned, in: AppSettings.shared.snippets) {
                 cleaned = expansion
             }
             // 2. Explicit command prefix ("//prompt …", "//better …"). With no
@@ -202,6 +228,23 @@ final class DictationCoordinator {
                 } else if !LocalRewriter.isAvailable {
                     cleaned = payload
                     failureNotice = "Apple Intelligence is off — inserted as spoken"
+                } else if let selection = selectionAtStart,
+                          !command.payload.isEmpty,
+                          CommandDetector.selectionInstruction(in: command.payload) != nil {
+                    // "//better — make it shorter" with text selected: the
+                    // payload is the instruction, the selection is the subject.
+                    hud.state.phase = .polishing
+                    if let transformed = await rewriter.transform(
+                        selection: selection,
+                        instruction: command.payload
+                    ) {
+                        cleaned = transformed
+                    } else {
+                        hud.state.phase = .error("Rewrite failed — selection left unchanged")
+                        hideHUDAfterDelay(seconds: 3)
+                        state = .idle
+                        return
+                    }
                 } else {
                     hud.state.phase = .polishing
                     let resolved = DictationCommand(
@@ -292,10 +335,19 @@ final class DictationCoordinator {
         state = .idle
     }
 
+    /// ✨ on the HUD: stop, then run the words through the on-device model
+    /// before inserting. Removes any dependence on the command being *heard*.
+    func finishWithPolish(_ kind: DictationCommand.Kind) {
+        guard state == .recording else { return }
+        forcedCommand = kind
+        Task { await stop() }
+    }
+
     /// ✕ on the HUD: throw the session away — nothing is inserted.
     func cancelDictation() async {
         guard state == .recording || state == .starting else { return }
         state = .finishing
+        forcedCommand = nil
         stopSilenceWatchdog()
         audio.stop()
         await engine.cancelSession()

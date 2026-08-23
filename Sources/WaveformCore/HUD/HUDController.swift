@@ -15,6 +15,7 @@ final class HUDController: NSObject, NSWindowDelegate {
     let state = HUDState()
     var onFinish: (() -> Void)?
     var onCancel: (() -> Void)?
+    var onPolish: ((Bool) -> Void)?
     private var panel: HUDPanel?
     private static let positionKey = "hudOriginV2"
 
@@ -52,7 +53,8 @@ final class HUDController: NSObject, NSWindowDelegate {
         let hosting = NSHostingView(rootView: HUDView(
             state: state,
             onFinish: { [weak self] in self?.onFinish?() },
-            onCancel: { [weak self] in self?.onCancel?() }
+            onCancel: { [weak self] in self?.onCancel?() },
+            onPolish: { [weak self] promptMode in self?.onPolish?(promptMode) }
         ))
         // Fixed stage big enough for the expanded pill; the SwiftUI content
         // animates between compact and expanded inside it.

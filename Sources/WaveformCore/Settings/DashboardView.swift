@@ -145,6 +145,7 @@ private struct HomeTab: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Try saying").font(.headline)
+                    tip("Press ✨ on the HUD instead of ✓ to organize before inserting (⌥-click builds a prompt)")
                     tip("“Double slash prompt — I want an agent that reviews my PRs…” → a clean, organized prompt")
                     tip("“Double slash better — okay so basically we should move the deadline…” → a tidy message")
                     tip("Select text anywhere first, then just: “double slash better.”")

@@ -32,6 +32,7 @@ The menu-bar icon (waveform + mic) shows **live permission status** — if somet
 ## Using it
 
 - **Start/stop**: your hotkey (Settings offers ⌘X, ⌥Space, ⌃⌥D, F19, or **double-tap Control**). Dictation also **auto-stops** after ~2.5s of silence once you've spoken (configurable / off).
+- **The ✨ button** (most reliable): while the HUD is up, press ✨ instead of ✓ — your words get organized by the on-device model, then inserted. ⌥-click it to build a prompt instead of tidying a message. No speech recognition involved, so it can't be misheard.
 - **AI commands** (on-device, free — requires Apple Intelligence enabled). Say a `//command` at the start and then ramble; the local model restructures everything after it:
   - **"double slash prompt"** — turns your ramble into a clean, organized prompt to paste into Claude/ChatGPT
   - **"double slash better"** (also `organize`, `structure`, `professional`, `shorter`, `concise`) — tidies a message

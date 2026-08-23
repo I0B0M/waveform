@@ -94,6 +94,22 @@ struct CommandDetectorTests {
         #expect(command?.payload == "Now that we shipped, we should tell the client.")
     }
 
+    @Test("misheard 'prompt' spellings still fire")
+    func mishearings() {
+        // What the recognizer actually produced in live testing.
+        #expect(CommandDetector.detect(in: "Double slash prom. Make this message better for Claude.")?.kind == .createPrompt)
+        #expect(CommandDetector.detect(in: "double slash promt, I need an agent that reviews PRs")?.kind == .createPrompt)
+        #expect(CommandDetector.detect(in: "Double-slash prompt, build me a summarizer.")?.kind == .createPrompt)
+    }
+
+    @Test("command restated mid-transcript uses the last occurrence")
+    func lastOccurrenceWins() {
+        let spoken = "The double slash prompt isn't working. Let's start again. Double slash prompt, I need an agent that reviews my pull requests."
+        let command = CommandDetector.detect(in: spoken)
+        #expect(command?.kind == .createPrompt)
+        #expect(command?.payload == "I need an agent that reviews my pull requests.")
+    }
+
     @Test("selection instructions are recognized")
     func selectionInstructions() {
         #expect(CommandDetector.selectionInstruction(in: "Make this more organized.") != nil)

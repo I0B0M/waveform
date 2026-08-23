@@ -41,15 +41,30 @@ enum CommandDetector {
     private static let requestLeadIn =
         #"(?:i\s+(?:need|want|would\s+like)\s+(?:you\s+to\s+)?|(?:please\s+)?(?:can|could)\s+you\s+)?"#
 
-    private static let spokenPrefix =
-        #"(?is)^\s*"# + leadIn + #"(?:(?:double|two)\s+)?slash(?:\s+slash)?\s+"#
-        + #"(prompt|better|improve|organi[sz]e|organi[sz]ed|structure|structured|professional|clean(?:\s*up)?|shorter|concise)"#
-        + #"\b[\s,.:;—-]*(.*)$"#
+    /// The command keyword, including the ways the recognizer actually mangles
+    /// it. "prompt" very often comes back as "prom" or "promt" — matching only
+    /// the correct spelling is why this silently did nothing.
+    private static let keyword =
+        #"(prom(?:pt|t|pts|pted)?|better|improve|organi[sz]ed?|structured?|professional|clean(?:\s*up)?|shorter|concise)"#
 
-    private static let symbolPrefix =
-        #"(?is)^\s*"# + leadIn + #"/{1,2}\s*"#
-        + #"(prompt|better|improve|organi[sz]e|organi[sz]ed|structure|structured|professional|clean(?:\s*up)?|shorter|concise)"#
-        + #"\b[\s,.:;—-]*(.*)$"#
+    /// Separator between the spoken words: whitespace, but also the hyphen the
+    /// recognizer likes to insert ("double-slash") and stray punctuation.
+    private static let sep = #"[\s,.:;—–-]+"#
+
+    /// "double slash prompt", "slash slash prompt", "slash prompt" — and the
+    /// literal "//prompt" if symbols come through. Searched ANYWHERE in the
+    /// transcript, not just at the start: people restate the command
+    /// mid-sentence ("let's start again — double slash prompt, …").
+    // Marker only — the payload is whatever follows it. Keeping the payload
+    // OUT of the pattern matters: a greedy trailing group consumes the rest of
+    // the transcript, so the engine finds exactly one match and "use the last
+    // occurrence" silently becomes "use the first".
+    private static let spokenMarker =
+        #"(?is)(?:(?:double|two)"# + sep + #")?slash(?:"# + sep + #"slash)?"# + sep
+        + keyword + #"\b"#
+
+    private static let symbolMarker =
+        #"(?is)/{1,2}\s*"# + keyword + #"\b"#
 
     /// Payloads shorter than this aren't worth rewriting — but an explicit
     /// prefix with no payload is valid: it targets the selection instead.
@@ -65,12 +80,20 @@ enum CommandDetector {
         #"(?is)^"# + leadIn + requestLeadIn + #"(?:create|make|write|build)\s+(?:me\s+)?(?:a\s+)?(?:quick\s+)?prompt\s*"#
         + #"(?:for\s+me)?\s*(?:about|for|to|that\s+says|saying)?\s*[,.:;—-]?\s*(.+)$"#
 
+    /// Fed to the recognizer as contextual bias so the command words are
+    /// actually heard as themselves.
+    static let vocabularyHints = [
+        "double slash prompt", "slash prompt", "double slash better",
+        "slash better", "slash organize", "slash professional",
+        "slash shorter", "prompt",
+    ]
+
     static func detect(in text: String) -> DictationCommand? {
-        // 1. Explicit prefixes win — no payload-length floor, because an
-        //    empty payload means "act on my selection".
-        for pattern in [spokenPrefix, symbolPrefix] {
-            guard let (keyword, payload) = twoGroups(of: pattern, in: text) else { continue }
-            let kind: DictationCommand.Kind = keyword.lowercased().hasPrefix("prompt")
+        // 1. Explicit markers win — no payload-length floor, because an empty
+        //    payload means "act on my selection".
+        for pattern in [spokenMarker, symbolMarker] {
+            guard let (word, payload) = lastMatch(of: pattern, in: text) else { continue }
+            let kind: DictationCommand.Kind = word.lowercased().hasPrefix("prom")
                 ? .createPrompt
                 : .improve
             return DictationCommand(kind: kind, payload: payload, wasExplicit: true)
@@ -126,17 +149,20 @@ enum CommandDetector {
         return String(trimmed[matched.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func twoGroups(of pattern: String, in text: String) -> (String, String)? {
+    /// The LAST marker in the transcript wins: when someone says the command,
+    /// talks about it, then says it again, the final one is the real request.
+    private static func lastMatch(of pattern: String, in text: String) -> (String, String)? {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)
-        guard let match = regex.firstMatch(in: text, range: range),
-              match.numberOfRanges > 2,
+        let matches = regex.matches(in: text, range: range)
+        guard let match = matches.last,
+              match.numberOfRanges > 1,
               let keywordRange = Range(match.range(at: 1), in: text),
-              let payloadRange = Range(match.range(at: 2), in: text) else { return nil }
-        return (
-            String(text[keywordRange]),
-            stripLeadIn(String(text[payloadRange]))
-        )
+              let markerRange = Range(match.range, in: text) else { return nil }
+
+        let remainder = text[markerRange.upperBound...]
+            .drop(while: { $0.isWhitespace || ",.:;—–-".contains($0) })
+        return (String(text[keywordRange]), stripLeadIn(String(remainder)))
     }
 
     private static func firstMatchPayload(of pattern: String, in text: String) -> String? {

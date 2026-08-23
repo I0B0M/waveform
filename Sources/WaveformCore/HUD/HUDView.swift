@@ -8,6 +8,9 @@ struct HUDView: View {
     @ObservedObject var state: HUDState
     var onFinish: (() -> Void)? = nil
     var onCancel: (() -> Void)? = nil
+    /// Finish, but run the text through the on-device model first.
+    /// `promptMode` (⌥-click) builds a prompt instead of tidying a message.
+    var onPolish: ((_ promptMode: Bool) -> Void)? = nil
     /// Fixed time for deterministic offscreen snapshots.
     var frozenTime: Double? = nil
 
@@ -37,6 +40,8 @@ struct HUDView: View {
     }
 
     private var isActive: Bool { state.phase == .listening }
+
+    private var canPolish: Bool { LocalRewriter.isAvailable }
 
     /// Compact until words arrive (or something needs attention). Transcripts
     /// only grow within a session, so this never flip-flops mid-dictation.
@@ -83,15 +88,25 @@ struct HUDView: View {
                 .clipped()
             }
 
+            roundButton(symbol: "sparkles", color: Self.violet, enabled: isActive && canPolish) {
+                onPolish?(NSEvent.modifierFlags.contains(.option))
+            }
+            .frame(width: expanded ? 26 : 0)
+            .opacity(expanded ? 1 : 0)
+            .scaleEffect(expanded ? 1 : 0.4)
+            .help(canPolish
+                ? "Organize this, then insert  (⌥-click: turn it into a prompt)"
+                : "Needs Apple Intelligence enabled")
+
             roundButton(symbol: "checkmark", color: Self.cyan, enabled: isActive) { onFinish?() }
                 .frame(width: expanded ? 26 : 0)
                 .opacity(expanded ? 1 : 0)
                 .scaleEffect(expanded ? 1 : 0.4)
-                .help("Finish now and insert")
+                .help("Insert exactly as spoken")
         }
         .padding(.horizontal, expanded ? 14 : 17)
         .padding(.vertical, expanded ? 11 : 9)
-        .frame(width: expanded ? 500 : 196)
+        .frame(width: expanded ? 520 : 196)
         .background(pillBackground)
         .overlay(pillRim)
         .shadow(color: Self.violet.opacity(0.30), radius: expanded ? 22 : 16, y: 5)
