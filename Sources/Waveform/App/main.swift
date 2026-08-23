@@ -26,6 +26,8 @@ MainActor.assumeIsolated {
     } else if let index = arguments.firstIndex(of: "--render-glyph"), arguments.indices.contains(index + 1) {
         let pixels = arguments.indices.contains(index + 2) ? Int(arguments[index + 2]) ?? 36 : 36
         IconExporter.exportGlyphAndExit(to: arguments[index + 1], pixels: pixels)
+    } else if let index = arguments.firstIndex(of: "--render-docs"), arguments.indices.contains(index + 1) {
+        DocsRenderer.renderAllAndExit(to: arguments[index + 1])
     } else if arguments.contains("--diagnose") {
         Diagnostics.runAndExit()
     } else if arguments.contains("--fm-check") {

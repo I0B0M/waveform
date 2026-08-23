@@ -3,7 +3,7 @@ import SwiftUI
 /// The main window: sidebar dashboard (Wispr-Flow-style structure, disco
 /// identity). Home = stats, Dictionary, History, Settings.
 public struct DashboardView: View {
-    enum Tab: String, CaseIterable, Identifiable {
+    public enum Tab: String, CaseIterable, Identifiable {
         case home = "Home"
         case dictionary = "Dictionary"
         case snippets = "Snippets"
@@ -11,7 +11,7 @@ public struct DashboardView: View {
         case history = "History"
         case settings = "Settings"
 
-        var id: String { rawValue }
+        public var id: String { rawValue }
         var symbol: String {
             switch self {
             case .home: return "sparkles"
@@ -31,40 +31,102 @@ public struct DashboardView: View {
     static let space = Color(red: 0.04, green: 0.02, blue: 0.10)
 
     var onHotkeyChange: () -> Void
+    /// Documentation mode: sample history and a neutral greeting, so nothing
+    /// personal can leak into a screenshot.
+    var demo: Bool
 
     @State private var tab: Tab = .home
-    @ObservedObject private var history = HistoryStore.shared
+    @ObservedObject private var history: HistoryStore
+
+    public init(
+        onHotkeyChange: @escaping () -> Void,
+        demo: Bool = false,
+        initialTab: Tab = .home
+    ) {
+        self.onHotkeyChange = onHotkeyChange
+        self.demo = demo
+        _tab = State(initialValue: initialTab)
+        _history = ObservedObject(wrappedValue: demo ? HistoryStore.demo() : HistoryStore.shared)
+    }
 
     public var body: some View {
-        NavigationSplitView {
-            List(Tab.allCases, selection: $tab) { item in
+        // Documentation renders compose the sidebar directly: a real
+        // NavigationSplitView column draws a system material that does not
+        // resolve offscreen (it comes out white), which would make every
+        // screenshot wrong. The live app uses the real split view below.
+        if demo {
+            HStack(spacing: 0) {
+                docsSidebar
+                detail
+            }
+            .frame(minWidth: 780, minHeight: 540)
+            .preferredColorScheme(.dark)
+        } else {
+            splitView
+        }
+    }
+
+    private var docsSidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Tab.allCases) { item in
                 Label(item.rawValue, systemImage: item.symbol)
-                    .tag(item)
+                    .font(.system(size: 13, weight: item == tab ? .semibold : .regular))
+                    .foregroundStyle(item == tab ? .primary : .secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(item == tab ? Color.white.opacity(0.10) : .clear)
+                    )
+            }
+            Spacer()
+        }
+        .padding(10)
+        .frame(width: 180)
+        .background(Color(red: 0.07, green: 0.04, blue: 0.15))
+    }
+
+    private var splitView: some View {
+        NavigationSplitView {
+            ZStack {
+                // Painted behind the List so the whole column is dark — a
+                // background on the List alone leaves the column's own
+                // material showing (and it renders white offscreen).
+                Color(red: 0.07, green: 0.04, blue: 0.15).ignoresSafeArea()
+                List(Tab.allCases, selection: $tab) { item in
+                    Label(item.rawValue, systemImage: item.symbol)
+                        .tag(item)
+                }
+                .scrollContentBackground(.hidden)
+                .listStyle(.sidebar)
             }
             .navigationSplitViewColumnWidth(min: 170, ideal: 180)
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .background(Color(red: 0.06, green: 0.03, blue: 0.13))
         } detail: {
-            ZStack {
-                LinearGradient(
-                    colors: [Self.space, Color(red: 0.02, green: 0.01, blue: 0.05)],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .ignoresSafeArea()
-
-                switch tab {
-                case .home: HomeTab(history: history)
-                case .dictionary: DictionaryTab()
-                case .snippets: SnippetsTab()
-                case .scratchpad: ScratchpadTab()
-                case .history: HistoryTab(history: history)
-                case .settings: SettingsView(onHotkeyChange: onHotkeyChange)
-                }
-            }
+            detail
         }
         .frame(minWidth: 780, minHeight: 540)
         .preferredColorScheme(.dark)
+        .background(DashboardView.space)
+    }
+
+    private var detail: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Self.space, Color(red: 0.02, green: 0.01, blue: 0.05)],
+                startPoint: .top, endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            switch tab {
+            case .home: HomeTab(history: history, demo: demo)
+            case .dictionary: DictionaryTab()
+            case .snippets: SnippetsTab()
+            case .scratchpad: ScratchpadTab()
+            case .history: HistoryTab(history: history)
+            case .settings: SettingsView(onHotkeyChange: onHotkeyChange)
+            }
+        }
     }
 }
 
@@ -72,10 +134,13 @@ public struct DashboardView: View {
 
 private struct HomeTab: View {
     @ObservedObject var history: HistoryStore
+    var demo: Bool = false
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
-        let name = NSFullUserName().components(separatedBy: " ").first ?? NSFullUserName()
+        let name = demo
+            ? "there"
+            : (NSFullUserName().components(separatedBy: " ").first ?? NSFullUserName())
         switch hour {
         case 5..<12: return "Good morning, \(name)"
         case 12..<17: return "Good afternoon, \(name)"

@@ -18,7 +18,9 @@ final class HistoryStore: ObservableObject {
     @Published private(set) var records: [DictationRecord] = []
 
     private static let cap = 500
-    private let fileURL: URL
+    /// nil for the in-memory demo store used to render documentation — real
+    /// dictation history must never end up in a screenshot.
+    private let fileURL: URL?
 
     private init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -26,6 +28,35 @@ final class HistoryStore: ObservableObject {
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         fileURL = base.appendingPathComponent("history.json")
         load()
+    }
+
+    private init(sample: [DictationRecord]) {
+        fileURL = nil
+        records = sample
+    }
+
+    /// Stand-in content for docs and previews.
+    static func demo() -> HistoryStore {
+        HistoryStore(sample: [
+            DictationRecord(
+                id: UUID(), date: Date().addingTimeInterval(-1_800),
+                durationSeconds: 14, wordCount: 24,
+                text: "Okay, so basically I wanted to explain that we should move the launch to next week and tell the client first.",
+                appName: "Slack"
+            ),
+            DictationRecord(
+                id: UUID(), date: Date().addingTimeInterval(-9_000),
+                durationSeconds: 9, wordCount: 17,
+                text: "Plan:\n• Ship the build\n• Update the changelog\n• Tell the team on Monday",
+                appName: "Notes"
+            ),
+            DictationRecord(
+                id: UUID(), date: Date().addingTimeInterval(-26_000),
+                durationSeconds: 11, wordCount: 21,
+                text: "Write a prompt for an agent that reviews pull requests and checks naming conventions against our style guide.",
+                appName: "Claude"
+            ),
+        ])
     }
 
     func add(text: String, duration: Double, appName: String?) {
@@ -66,13 +97,14 @@ final class HistoryStore: ObservableObject {
     // MARK: - Persistence
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
+        guard let fileURL,
+              let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode([DictationRecord].self, from: data) else { return }
         records = decoded
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(records) else { return }
+        guard let fileURL, let data = try? JSONEncoder().encode(records) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
 }

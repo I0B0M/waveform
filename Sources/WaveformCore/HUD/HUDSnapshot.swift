@@ -6,7 +6,7 @@ public enum HUDSnapshot {
     @MainActor
     public static func renderSettingsAndExit(to path: String) {
         _ = NSApplication.shared
-        let view = DashboardView(onHotkeyChange: {})
+        let view = DashboardView(onHotkeyChange: {}, demo: true)
             .frame(width: 840, height: 580)
         render(view: view, size: NSSize(width: 840, height: 580), to: path)
     }
