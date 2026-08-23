@@ -73,5 +73,19 @@ cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 codesign --force --sign "$IDENTITY" --identifier com.ibrahim.waveform "$APP"
 
+# Keep an installed copy in sync automatically. Two copies of a menu-bar app
+# is a foot-gun — you fix a bug, then launch the stale one and see no change.
+LS_REGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+if [ -d "/Applications/Waveform.app" ] || [ "${INSTALL:-0}" = "1" ]; then
+  if ditto "$APP" "/Applications/Waveform.app" 2>/dev/null; then
+    echo "Installed to /Applications/Waveform.app"
+    [ -x "$LS_REGISTER" ] && "$LS_REGISTER" -f "/Applications/Waveform.app" >/dev/null 2>&1
+  else
+    echo "Could not write /Applications — copy it manually in Finder."
+  fi
+fi
+# Nudge LaunchServices so Finder picks up a changed icon immediately.
+[ -x "$LS_REGISTER" ] && "$LS_REGISTER" -f "$APP" >/dev/null 2>&1
+
 echo "Built $APP (config: $CONFIG, identity: $IDENTITY)"
 echo "Run with: open $APP"

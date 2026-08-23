@@ -23,6 +23,9 @@ MainActor.assumeIsolated {
     } else if let index = arguments.firstIndex(of: "--render-icon"), arguments.indices.contains(index + 1) {
         let pixels = arguments.indices.contains(index + 2) ? Int(arguments[index + 2]) ?? 512 : 512
         IconExporter.exportPreviewAndExit(to: arguments[index + 1], pixels: pixels)
+    } else if let index = arguments.firstIndex(of: "--render-glyph"), arguments.indices.contains(index + 1) {
+        let pixels = arguments.indices.contains(index + 2) ? Int(arguments[index + 2]) ?? 36 : 36
+        IconExporter.exportGlyphAndExit(to: arguments[index + 1], pixels: pixels)
     } else if arguments.contains("--diagnose") {
         Diagnostics.runAndExit()
     } else if arguments.contains("--fm-check") {

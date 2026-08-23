@@ -72,7 +72,8 @@ public struct DiscoIconView: View {
 
     private func drawBars(in graphics: inout GraphicsContext, size: CGSize, facets: Bool) {
         let side = min(size.width, size.height)
-        let inset = side * 0.135
+        // The plateless glyph (menu bar) fills more of its frame.
+        let inset = side * (showsPlate ? 0.135 : 0.07)
         let field = CGRect(
             x: (size.width - side) / 2 + inset,
             y: (size.height - side) / 2 + inset,
@@ -100,6 +101,25 @@ public struct DiscoIconView: View {
 
             guard facets else {
                 graphics.fill(shape, with: .color(rgb(baseColor)))
+                continue
+            }
+
+            // Below a few pixels per mirror the facet grid is sub-pixel noise;
+            // a lit gradient reads far better at menu-bar sizes.
+            if facetSize < 2.5 {
+                graphics.fill(
+                    shape,
+                    with: .linearGradient(
+                        Gradient(colors: [rgb(baseColor * 1.45), rgb(baseColor * 0.70)]),
+                        startPoint: CGPoint(x: rect.minX, y: rect.minY),
+                        endPoint: CGPoint(x: rect.maxX, y: rect.maxY)
+                    )
+                )
+                graphics.stroke(
+                    shape,
+                    with: .color(.white.opacity(0.35)),
+                    lineWidth: max(0.5, side * 0.008)
+                )
                 continue
             }
 

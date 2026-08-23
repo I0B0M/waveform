@@ -10,9 +10,14 @@ Requirements: **macOS 26** on Apple silicon, Xcode **Command Line Tools** (`xcod
 
 ```bash
 git clone <repo-url> && cd Waveform
-Scripts/build-app.sh
-open build/Waveform.app
+INSTALL=1 Scripts/build-app.sh     # also copies to /Applications
+open /Applications/Waveform.app
 ```
+
+Drop `INSTALL=1` to keep it local (`open build/Waveform.app`). Once a copy
+exists in /Applications, later builds sync it automatically — two copies of a
+menu-bar app is a foot-gun, since you'd fix something and then launch the stale
+one.
 
 The build script creates a local "Waveform Dev" signing certificate on first run (so macOS permission grants survive rebuilds — without it, every rebuild looks like a new app and permissions silently reset).
 

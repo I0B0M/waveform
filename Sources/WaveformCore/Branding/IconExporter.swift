@@ -48,11 +48,25 @@ public enum IconExporter {
         }
     }
 
+    /// Plateless glyph preview — the menu-bar variant.
     @MainActor
-    private static func png(pixels: Int) throws -> Data {
+    public static func exportGlyphAndExit(to path: String, pixels: Int) {
+        _ = NSApplication.shared
+        do {
+            try png(pixels: pixels, plate: false).write(to: URL(fileURLWithPath: path))
+            print("Wrote \(path) (\(pixels)px glyph)")
+            exit(0)
+        } catch {
+            print("FAIL: \(error)")
+            exit(1)
+        }
+    }
+
+    @MainActor
+    private static func png(pixels: Int, plate: Bool = true) throws -> Data {
         let side = CGFloat(pixels)
         let renderer = ImageRenderer(
-            content: DiscoIconView().frame(width: side, height: side)
+            content: DiscoIconView(showsPlate: plate).frame(width: side, height: side)
         )
         renderer.scale = 1
         guard let cgImage = renderer.cgImage else {

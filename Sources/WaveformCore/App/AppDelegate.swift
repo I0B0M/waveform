@@ -75,10 +75,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = item.button {
-            button.image = NSImage(
+            button.image = MenuBarIcon.image() ?? NSImage(
                 systemSymbolName: "waveform.and.mic",
                 accessibilityDescription: "Waveform"
             )
+            button.image?.accessibilityDescription = "Waveform"
         }
         statusItem = item
         refreshMenu()
