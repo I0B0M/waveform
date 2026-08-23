@@ -54,10 +54,12 @@ final class HUDController: NSObject, NSWindowDelegate {
             onFinish: { [weak self] in self?.onFinish?() },
             onCancel: { [weak self] in self?.onCancel?() }
         ))
-        hosting.setFrameSize(hosting.fittingSize)
+        // Fixed stage big enough for the expanded pill; the SwiftUI content
+        // animates between compact and expanded inside it.
+        hosting.setFrameSize(NSSize(width: 560, height: 150))
 
         let panel = HUDPanel(
-            contentRect: NSRect(origin: .zero, size: hosting.fittingSize),
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 560, height: 150)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false

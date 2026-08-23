@@ -6,6 +6,8 @@ public struct DashboardView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case home = "Home"
         case dictionary = "Dictionary"
+        case snippets = "Snippets"
+        case scratchpad = "Scratchpad"
         case history = "History"
         case settings = "Settings"
 
@@ -14,6 +16,8 @@ public struct DashboardView: View {
             switch self {
             case .home: return "sparkles"
             case .dictionary: return "character.book.closed"
+            case .snippets: return "text.badge.plus"
+            case .scratchpad: return "square.and.pencil"
             case .history: return "clock.arrow.circlepath"
             case .settings: return "gearshape"
             }
@@ -52,6 +56,8 @@ public struct DashboardView: View {
                 switch tab {
                 case .home: HomeTab(history: history)
                 case .dictionary: DictionaryTab()
+                case .snippets: SnippetsTab()
+                case .scratchpad: ScratchpadTab()
                 case .history: HistoryTab(history: history)
                 case .settings: SettingsView(onHotkeyChange: onHotkeyChange)
                 }
@@ -67,11 +73,29 @@ public struct DashboardView: View {
 private struct HomeTab: View {
     @ObservedObject var history: HistoryStore
 
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let name = NSFullUserName().components(separatedBy: " ").first ?? NSFullUserName()
+        switch hour {
+        case 5..<12: return "Good morning, \(name)"
+        case 12..<17: return "Good afternoon, \(name)"
+        default: return "Good evening, \(name)"
+        }
+    }
+
+    private var topApps: [(name: String, words: Int)] {
+        var counts: [String: Int] = [:]
+        for record in history.records {
+            counts[record.appName ?? "Unknown", default: 0] += record.wordCount
+        }
+        return counts.sorted { $0.value > $1.value }.prefix(4).map { ($0.key, $0.value) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Waveform")
-                    .font(.system(size: 34, weight: .black, design: .rounded))
+                Text(greeting)
+                    .font(.system(size: 32, weight: .black, design: .rounded))
                     .foregroundStyle(
                         LinearGradient(
                             colors: [DashboardView.orange, DashboardView.pink, DashboardView.violet, DashboardView.cyan],
@@ -86,6 +110,33 @@ private struct HomeTab: View {
                     statCard("Dictations", "\(history.totalDictations)", DashboardView.violet)
                     statCard("This week", "\(history.wordsThisWeek) words", DashboardView.cyan)
                     statCard("Speed", history.averageWordsPerMinute > 0 ? "\(history.averageWordsPerMinute) wpm" : "—", DashboardView.pink)
+                }
+
+                if !topApps.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Top apps").font(.headline)
+                        HStack(spacing: 10) {
+                            ForEach(topApps, id: \.name) { app in
+                                HStack(spacing: 6) {
+                                    Text(app.name).font(.callout.weight(.medium))
+                                    Text("\(app.words)w").font(.caption).foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Capsule().fill(.white.opacity(0.06)))
+                                .overlay(Capsule().strokeBorder(DashboardView.cyan.opacity(0.3), lineWidth: 1))
+                            }
+                        }
+                    }
+                }
+
+                if !history.records.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Recent").font(.headline)
+                        ForEach(history.records.prefix(3)) { record in
+                            HistoryRow(record: record)
+                        }
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -231,5 +282,106 @@ private struct HistoryRow: View {
             .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.05)))
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+// MARK: - Snippets
+
+private struct SnippetsTab: View {
+    @State private var snippets: [Snippet] = AppSettings.shared.snippets
+    @State private var newTrigger = ""
+    @State private var newExpansion = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Voice Snippets")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+            Text("Say the trigger phrase (or “insert ” + trigger) while dictating and the expansion is typed instead. Saved automatically.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .top, spacing: 10) {
+                TextField("Trigger — e.g. my calendar link", text: $newTrigger)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                TextField("Expansion — the text to insert", text: $newExpansion, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...3)
+                Button("Add") {
+                    let trigger = newTrigger.trimmingCharacters(in: .whitespaces)
+                    let expansion = newExpansion.trimmingCharacters(in: .whitespaces)
+                    guard !trigger.isEmpty, !expansion.isEmpty else { return }
+                    snippets.append(Snippet(trigger: trigger, expansion: expansion))
+                    AppSettings.shared.snippets = snippets
+                    newTrigger = ""
+                    newExpansion = ""
+                }
+                .disabled(newTrigger.trimmingCharacters(in: .whitespaces).isEmpty
+                    || newExpansion.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if snippets.isEmpty {
+                Spacer()
+                Text("No snippets yet — add your address, calendar link, or a canned reply.")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(snippets) { snippet in
+                            HStack(alignment: .top) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("“\(snippet.trigger)”")
+                                        .font(.callout.weight(.semibold))
+                                        .foregroundStyle(DashboardView.cyan)
+                                    Text(snippet.expansion)
+                                        .font(.callout)
+                                        .lineLimit(2)
+                                        .foregroundStyle(.primary.opacity(0.85))
+                                }
+                                Spacer()
+                                Button {
+                                    snippets.removeAll { $0.id == snippet.id }
+                                    AppSettings.shared.snippets = snippets
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .foregroundStyle(DashboardView.pink.opacity(0.8))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(.white.opacity(0.05)))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(28)
+    }
+}
+
+// MARK: - Scratchpad
+
+private struct ScratchpadTab: View {
+    @ObservedObject private var pad = ScratchpadStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Scratchpad")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+            Text("A local drafting space — click in, dictate long rambles here, shape them, then copy where they belong. Autosaved on this Mac.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            TextEditor(text: $pad.text)
+                .font(.system(size: 14, design: .rounded))
+                .scrollContentBackground(.hidden)
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.orange.opacity(0.3), lineWidth: 1))
+        }
+        .padding(28)
     }
 }

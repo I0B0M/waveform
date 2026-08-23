@@ -12,7 +12,12 @@ final class HUDState: ObservableObject {
     }
 
     @Published var phase: Phase = .listening
-    @Published var transcript: String = ""
+    @Published var finalizedText: String = ""
+    @Published var volatileText: String = ""
+
+    var transcript: String {
+        (finalizedText + " " + volatileText).trimmingCharacters(in: .whitespaces)
+    }
 
     /// Smoothed 0…1 microphone level (attack fast, release slow so the
     /// waveform feels alive without flickering).
@@ -28,7 +33,8 @@ final class HUDState: ObservableObject {
 
     func reset() {
         phase = .listening
-        transcript = ""
+        finalizedText = ""
+        volatileText = ""
         level = 0
     }
 }

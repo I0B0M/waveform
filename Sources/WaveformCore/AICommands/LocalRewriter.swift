@@ -89,6 +89,40 @@ final class LocalRewriter {
         }
     }
 
+    private static let correctionInstructions = """
+        The text is a spoken transcript containing self-corrections (phrases \
+        like "no wait", "scratch that", "I meant"). Apply the speaker's \
+        corrections: keep what they corrected TO, remove what they corrected \
+        AWAY FROM along with the correction phrases themselves. Change \
+        absolutely nothing else — same words, same order, same punctuation. \
+        Reply with ONLY the corrected text.
+        """
+
+    /// Resolve spoken self-corrections. Nil = use the text as dictated.
+    func resolveCorrections(in text: String) async -> String? {
+        guard Self.isAvailable else { return nil }
+        do {
+            let output: String = try await withThrowingTimeout(seconds: 8) {
+                let session = LanguageModelSession(instructions: Self.correctionInstructions)
+                let response = try await session.respond(to: text)
+                return response.content
+            }
+            let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !result.isEmpty else { return nil }
+            let lowered = result.lowercased()
+            let preambles = ["here is", "here's", "sure,", "sure!", "certainly", "as an ai", "i can't", "i cannot"]
+            guard !preambles.contains(where: { lowered.hasPrefix($0) }) else { return nil }
+            // Corrections remove words — the result must not grow, and must
+            // not collapse to a stub.
+            let ratio = Double(result.count) / Double(max(text.count, 1))
+            guard ratio >= 0.3, ratio <= 1.05 else { return nil }
+            return result
+        } catch {
+            NSLog("Waveform: correction resolve failed (%@)", String(describing: error))
+            return nil
+        }
+    }
+
     // MARK: - Output guards
 
     private static func validated(_ output: String, against command: DictationCommand) -> String? {

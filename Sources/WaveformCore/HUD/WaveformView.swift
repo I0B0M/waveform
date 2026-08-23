@@ -23,19 +23,19 @@ struct WaveformView: View {
     private static let ribbons: [Ribbon] = [
         Ribbon(
             color: Color(red: 1.00, green: 0.45, blue: 0.10), // sunset orange
-            harmonics: [(1.7, 1.00, 3.4), (3.9, 0.45, -2.2), (7.1, 0.22, 5.1)],
+            harmonics: [(1.7, 1.00, 4.8), (3.9, 0.50, -3.4), (7.1, 0.26, 7.2)],
             phaseOffset: 0.0,
             thickness: 2.4
         ),
         Ribbon(
             color: Color(red: 0.72, green: 0.20, blue: 1.00), // ultraviolet
-            harmonics: [(2.3, 1.00, -2.8), (4.7, 0.40, 4.0), (8.3, 0.18, -4.6)],
+            harmonics: [(2.3, 1.00, -4.1), (4.7, 0.45, 5.7), (8.3, 0.22, -6.5)],
             phaseOffset: 2.1,
             thickness: 2.0
         ),
         Ribbon(
             color: Color(red: 0.16, green: 0.85, blue: 1.00), // electric cyan
-            harmonics: [(2.9, 1.00, 2.3), (5.3, 0.38, -3.5), (9.7, 0.15, 3.1)],
+            harmonics: [(2.9, 1.00, 3.5), (5.3, 0.42, -5.0), (9.7, 0.18, 4.6)],
             phaseOffset: 4.2,
             thickness: 1.8
         ),
@@ -52,7 +52,7 @@ struct WaveformView: View {
 
     private func draw(in graphics: inout GraphicsContext, size: CGSize, time: Double) {
         // Idle breathing keeps the ribbons alive at low level; voice opens them up.
-        let energy = 0.16 + 0.84 * Double(min(max(level, 0), 1))
+        let energy = 0.22 + 0.78 * Double(min(max(level, 0), 1))
         let midY = size.height / 2
         let maxAmplitude = size.height * 0.42
 

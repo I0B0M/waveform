@@ -11,7 +11,17 @@ import Foundation
 ///
 /// It deliberately never reorders, rephrases, or drops content words.
 struct TextCleaner {
+    /// Per-app output style. `.chat` skips the trailing period (message-thread
+    /// convention); `.code` skips sentence capitalization AND terminal
+    /// punctuation (identifiers and commands must arrive untouched).
+    enum CleanStyle {
+        case standard
+        case chat
+        case code
+    }
+
     var removeFillers: Bool = true
+    var style: CleanStyle = .standard
 
     /// Standalone-token fillers only. Words like "like" or "so" are meaningful
     /// too often to strip safely.
@@ -28,8 +38,12 @@ struct TextCleaner {
         }
         text = Self.collapseRepeatedWords(in: text)
         text = Self.normalizeWhitespace(in: text)
-        text = Self.capitalizeSentences(in: text)
-        text = Self.ensureTerminalPunctuation(in: text)
+        if style != .code {
+            text = Self.capitalizeSentences(in: text)
+        }
+        if style == .standard {
+            text = Self.ensureTerminalPunctuation(in: text)
+        }
         return text
     }
 

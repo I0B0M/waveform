@@ -31,6 +31,7 @@ final class DictationCoordinator {
     private var sessionStartedAt: TimeInterval = 0
     private var selectionAtStart: String?
     private var targetAppName: String?
+    private var targetBundleId: String?
 
     // Silence auto-stop state.
     private var lastVoiceActivityAt: TimeInterval = 0
@@ -113,6 +114,7 @@ final class DictationCoordinator {
         // BEFORE the HUD appears, so "make this more organized" can rewrite it.
         selectionAtStart = injector.readSelectedText()
         targetAppName = NSWorkspace.shared.frontmostApplication?.localizedName
+        targetBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         sessionStartedAt = ProcessInfo.processInfo.systemUptime
 
         hud.show()
@@ -124,7 +126,8 @@ final class DictationCoordinator {
             try await engine.startSession(contextualStrings: AppSettings.shared.dictionaryTerms) { update in
                 Task { @MainActor [weak self] in
                     if update.display != hudState.transcript {
-                        hudState.transcript = update.display
+                        hudState.finalizedText = update.finalized
+                        hudState.volatileText = update.volatile
                         // The recognizer producing new text is the strongest
                         // "still speaking" signal there is.
                         if let self, !update.display.isEmpty {
@@ -168,7 +171,10 @@ final class DictationCoordinator {
 
         do {
             let raw = try await engine.finishSession()
-            let cleaner = TextCleaner(removeFillers: AppSettings.shared.removeFillers)
+            let style: TextCleaner.CleanStyle = AppSettings.shared.contextAwareStyle
+                ? AppStyle.cleanStyle(forBundleId: targetBundleId)
+                : .standard
+            let cleaner = TextCleaner(removeFillers: AppSettings.shared.removeFillers, style: style)
             var cleaned = cleaner.clean(raw)
 
             if cleaned.isEmpty {
@@ -177,9 +183,14 @@ final class DictationCoordinator {
                 return
             }
 
+            // Voice snippet? ("insert my calendar link") — expansion wins
+            // over every other interpretation.
+            if let expansion = SnippetMatcher.expansion(for: cleaned, in: AppSettings.shared.snippets) {
+                cleaned = expansion
+            }
             // Selection command mode: text was selected and the user spoke a
             // short instruction — transform the SELECTION, not the speech.
-            if AppSettings.shared.aiCommandsEnabled,
+            else if AppSettings.shared.aiCommandsEnabled,
                LocalRewriter.isAvailable,
                let selection = selectionAtStart,
                let instruction = CommandDetector.selectionInstruction(in: cleaned) {
@@ -202,6 +213,13 @@ final class DictationCoordinator {
                let command = CommandDetector.detect(in: cleaned) {
                 hud.state.phase = .polishing
                 cleaned = await rewriter.rewrite(command) ?? command.payload
+            }
+            // Spoken self-corrections ("…at 5, no wait, 6") — resolve them.
+            else if AppSettings.shared.aiCommandsEnabled,
+               LocalRewriter.isAvailable,
+               SelfCorrection.hasMarkers(cleaned) {
+                hud.state.phase = .polishing
+                cleaned = await rewriter.resolveCorrections(in: cleaned) ?? cleaned
             }
 
             let outcome = await injector.inject(cleaned, method: AppSettings.shared.insertionMethod)

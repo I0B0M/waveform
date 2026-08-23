@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var insertionMethod: TextInjector.Method = AppSettings.shared.insertionMethod
     @State private var silenceTimeout: Double = AppSettings.shared.silenceTimeout
     @State private var aiCommandsEnabled: Bool = AppSettings.shared.aiCommandsEnabled
+    @State private var contextAwareStyle: Bool = AppSettings.shared.contextAwareStyle
 
 
     private static let silenceChoices: [(label: String, value: Double)] = [
@@ -60,6 +61,13 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Context-aware style", isOn: $contextAwareStyle)
+                    .onChange(of: contextAwareStyle) { _, newValue in
+                        AppSettings.shared.contextAwareStyle = newValue
+                    }
+                Text("No trailing period in Slack/Discord/Messages; no auto-capitalization or punctuation in editors and terminals.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("Remove filler words (um, uh, …)", isOn: $removeFillers)
                     .onChange(of: removeFillers) { _, newValue in
                         AppSettings.shared.removeFillers = newValue

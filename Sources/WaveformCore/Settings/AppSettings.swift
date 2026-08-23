@@ -15,6 +15,8 @@ final class AppSettings {
         static let dictionaryTerms = "dictionaryTerms"
         static let aiCommandsEnabled = "aiCommandsEnabled"
         static let saveHistory = "saveHistory"
+        static let contextAwareStyle = "contextAwareStyle"
+        static let snippets = "snippets"
     }
 
     var hotkeyPreset: HotkeyPreset {
@@ -76,6 +78,29 @@ final class AppSettings {
             return defaults.bool(forKey: Key.saveHistory)
         }
         set { defaults.set(newValue, forKey: Key.saveHistory) }
+    }
+
+    /// Adapt output to the target app: no trailing period in chat apps, no
+    /// auto-capitalization/punctuation in code editors and terminals.
+    var contextAwareStyle: Bool {
+        get {
+            if defaults.object(forKey: Key.contextAwareStyle) == nil { return true }
+            return defaults.bool(forKey: Key.contextAwareStyle)
+        }
+        set { defaults.set(newValue, forKey: Key.contextAwareStyle) }
+    }
+
+    var snippets: [Snippet] {
+        get {
+            guard let data = defaults.data(forKey: Key.snippets),
+                  let decoded = try? JSONDecoder().decode([Snippet].self, from: data) else { return [] }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.snippets)
+            }
+        }
     }
 
     var removeFillers: Bool {

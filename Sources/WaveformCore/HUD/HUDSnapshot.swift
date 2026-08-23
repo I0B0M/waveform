@@ -16,7 +16,8 @@ public enum HUDSnapshot {
         _ = NSApplication.shared
 
         let state = HUDState()
-        state.transcript = "Okay, so basically, I wanted to explain that we should move this to next week."
+        state.finalizedText = "Okay, so basically, I wanted to explain that we should"
+        state.volatileText = "move this to next week"
         state.level = 0.75
 
         // A desktop-like backdrop so the review image shows the HUD in context.

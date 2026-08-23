@@ -53,6 +53,7 @@ final class TextInjector {
         guard !text.isEmpty else { return .insertedDirectly }
 
         guard Self.isTrusted(promptIfNeeded: false) else {
+            NSLog("Waveform: injection BLOCKED — Accessibility not granted; text left on clipboard")
             putOnPasteboard(text, transient: false)
             return .copiedOnly
         }
@@ -128,12 +129,23 @@ final class TextInjector {
         )
         guard status == .success else { return false }
 
-        // Verify: after a real insert the selection range moves (caret lands
-        // after the inserted text). If nothing changed, the app lied.
+        // Verify pass 1: after a real insert the selection range moves (caret
+        // lands after the inserted text). If nothing changed, the app lied.
         let rangeAfter = selectedRange(of: focused)
         guard let after = rangeAfter else { return false }
         if let before = rangeBefore, before.location == after.location, before.length == after.length {
             return false
+        }
+        // Verify pass 2: when the field's value is readable, our text must
+        // actually be in it — some apps move the caret without inserting.
+        var valueRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(focused, kAXValueAttribute as CFString, &valueRef) == .success,
+           let value = valueRef as? String,
+           value.count < 200_000 {
+            let probe = String(text.prefix(80))
+            if !probe.isEmpty, !value.contains(probe) {
+                return false
+            }
         }
         return true
     }
