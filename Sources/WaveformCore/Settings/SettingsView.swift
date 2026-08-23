@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var silenceTimeout: Double = AppSettings.shared.silenceTimeout
     @State private var aiCommandsEnabled: Bool = AppSettings.shared.aiCommandsEnabled
     @State private var contextAwareStyle: Bool = AppSettings.shared.contextAwareStyle
+    @State private var voiceCommandsEnabled: Bool = AppSettings.shared.voiceCommandsEnabled
 
 
     private static let silenceChoices: [(label: String, value: Double)] = [
@@ -66,6 +67,13 @@ struct SettingsView: View {
                         AppSettings.shared.contextAwareStyle = newValue
                     }
                 Text("No trailing period in Slack/Discord/Messages; no auto-capitalization or punctuation in editors and terminals.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Spoken formatting commands", isOn: $voiceCommandsEnabled)
+                    .onChange(of: voiceCommandsEnabled) { _, newValue in
+                        AppSettings.shared.voiceCommandsEnabled = newValue
+                    }
+                Text("Say “new paragraph”, “new line”, “bullet point”, “comma”, “question mark”, “open paren”, or “delete that” and Waveform types the formatting instead of the words.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Remove filler words (um, uh, …)", isOn: $removeFillers)

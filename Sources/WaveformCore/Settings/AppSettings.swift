@@ -17,6 +17,7 @@ final class AppSettings {
         static let saveHistory = "saveHistory"
         static let contextAwareStyle = "contextAwareStyle"
         static let snippets = "snippets"
+        static let voiceCommandsEnabled = "voiceCommandsEnabled"
     }
 
     var hotkeyPreset: HotkeyPreset {
@@ -101,6 +102,15 @@ final class AppSettings {
                 defaults.set(data, forKey: Key.snippets)
             }
         }
+    }
+
+    /// Spoken formatting: "new paragraph", "bullet point", "comma", …
+    var voiceCommandsEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.voiceCommandsEnabled) == nil { return true }
+            return defaults.bool(forKey: Key.voiceCommandsEnabled)
+        }
+        set { defaults.set(newValue, forKey: Key.voiceCommandsEnabled) }
     }
 
     var removeFillers: Bool {

@@ -4,9 +4,16 @@ Local-first dictation for macOS 26 with a retro neon HUD. Speak anywhere, get cl
 
 **Flow:** hotkey → neon HUD → speak → live transcription → stop talking (auto-stops after silence) → cleaned text lands wherever your cursor is: Slack, VS Code, browser, Notes, anywhere.
 
-## Install (colleagues start here)
+## Install
 
-Requirements: **macOS 26** on Apple silicon, Xcode **Command Line Tools** (`xcode-select --install`). No Xcode needed.
+**Just want to use it?** Get `Waveform-<version>.dmg`, drag the app to
+Applications, then **right-click it → Open** the first time. That right-click is
+required because this build is signed with a locally-generated certificate
+rather than a paid Apple Developer ID; macOS shows a warning it won't show
+again. Then press the hotkey once and grant **Microphone** and **Accessibility**.
+
+**Building it yourself** requires **macOS 26** on Apple silicon and Xcode
+**Command Line Tools** (`xcode-select --install`). No Xcode needed.
 
 ```bash
 git clone <repo-url> && cd Waveform
@@ -42,6 +49,16 @@ The menu-bar icon (waveform + mic) shows **live permission status** — if somet
 - **Personal dictionary** (Settings): one term per line — names, jargon, acronyms. Biases recognition from the next dictation.
 - **Filler removal**: "um okay so basically…" → "Okay, so basically…". Toggleable.
 - All settings save automatically — there is no Save button.
+
+## Sharing a build
+
+```bash
+Scripts/release.sh        # → dist/Waveform-<version>.dmg
+```
+
+The disk image holds the app, an Applications shortcut, and setup notes.
+Recipients need nothing installed. To drop the first-launch warning entirely,
+sign with a real Apple Developer ID and notarize — no code changes required.
 
 ## Icon
 

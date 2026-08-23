@@ -67,7 +67,11 @@ struct TextCleaner {
     }
 
     static func normalizeWhitespace(in text: String) -> String {
-        var result = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        // Horizontal whitespace only — collapsing \\s+ would eat the line
+        // breaks that voice commands just inserted.
+        var result = text.replacingOccurrences(of: "[ \\t]+", with: " ", options: .regularExpression)
+        result = result.replacingOccurrences(of: " *\\n *", with: "\n", options: .regularExpression)
+        result = result.replacingOccurrences(of: "\n{3,}", with: "\n\n", options: .regularExpression)
         // No space before closing punctuation.
         result = result.replacingOccurrences(of: "\\s+([,.;:!?])", with: "$1", options: .regularExpression)
         // Collapse doubled punctuation a filler cut can leave ("okay,, so").
@@ -84,7 +88,7 @@ struct TextCleaner {
             if capitalizeNext, char.isLetter {
                 characters[index] = Character(char.uppercased())
                 capitalizeNext = false
-            } else if char == "." || char == "!" || char == "?" {
+            } else if char == "." || char == "!" || char == "?" || char == "\n" {
                 capitalizeNext = true
             }
         }
@@ -93,6 +97,8 @@ struct TextCleaner {
 
     static func ensureTerminalPunctuation(in text: String) -> String {
         guard let last = text.last else { return text }
+        // Don't punctuate a deliberate line break or an empty bullet.
+        if last == "\n" || last == "•" || last == " " { return text }
         if last.isLetter || last.isNumber {
             return text + "."
         }

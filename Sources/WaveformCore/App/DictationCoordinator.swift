@@ -185,7 +185,8 @@ final class DictationCoordinator {
                 ? AppStyle.cleanStyle(forBundleId: targetBundleId)
                 : .standard
             let cleaner = TextCleaner(removeFillers: AppSettings.shared.removeFillers, style: style)
-            var cleaned = cleaner.clean(raw)
+            let spoken = AppSettings.shared.voiceCommandsEnabled ? VoiceCommands.apply(to: raw) : raw
+            var cleaned = cleaner.clean(spoken)
 
             if cleaned.isEmpty {
                 hud.hide()
