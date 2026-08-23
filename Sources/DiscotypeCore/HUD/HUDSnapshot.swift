@@ -4,6 +4,14 @@ import SwiftUI
 /// Renders the HUD to a PNG for design review without showing any window.
 public enum HUDSnapshot {
     @MainActor
+    public static func renderSettingsAndExit(to path: String) {
+        _ = NSApplication.shared
+        let view = SettingsView(onHotkeyChange: {})
+            .frame(width: 440, height: 470)
+        render(view: view, size: NSSize(width: 440, height: 470), to: path)
+    }
+
+    @MainActor
     public static func renderAndExit(to path: String) {
         _ = NSApplication.shared
 
@@ -26,8 +34,13 @@ public enum HUDSnapshot {
         }
         .frame(width: 560, height: 260)
 
-        let hosting = NSHostingView(rootView: scene)
-        hosting.frame = NSRect(x: 0, y: 0, width: 560, height: 260)
+        render(view: scene, size: NSSize(width: 560, height: 260), to: path)
+    }
+
+    @MainActor
+    private static func render(view: some View, size: NSSize, to path: String) {
+        let hosting = NSHostingView(rootView: AnyView(view))
+        hosting.frame = NSRect(origin: .zero, size: size)
 
         let window = NSWindow(
             contentRect: hosting.frame,

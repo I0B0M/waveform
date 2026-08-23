@@ -134,7 +134,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             let hosting = NSHostingController(rootView: view)
             let window = NSWindow(contentViewController: hosting)
             window.title = "Discotype Settings"
-            window.styleMask = [.titled, .closable]
+            window.setContentSize(NSSize(width: 440, height: 470))
             window.isReleasedWhenClosed = false
             window.center()
             settingsWindow = window

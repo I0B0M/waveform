@@ -14,6 +14,10 @@ MainActor.assumeIsolated {
         SelfTest.runAndExit(text: text)
     } else if let index = arguments.firstIndex(of: "--render-hud"), arguments.indices.contains(index + 1) {
         HUDSnapshot.renderAndExit(to: arguments[index + 1])
+    } else if let index = arguments.firstIndex(of: "--render-settings"), arguments.indices.contains(index + 1) {
+        HUDSnapshot.renderSettingsAndExit(to: arguments[index + 1])
+    } else if arguments.contains("--fm-check") {
+        FoundationModelCheck.runAndExit()
     } else {
         let app = NSApplication.shared
         let delegate = AppDelegate()

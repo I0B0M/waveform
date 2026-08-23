@@ -37,8 +37,8 @@ final class TextInjector {
 
         var label: String {
             switch self {
-            case .auto: return "Auto (insert, then paste)"
-            case .pasteOnly: return "Paste (⌘V) only"
+            case .auto: return "Auto (insert, else type)"
+            case .pasteOnly: return "Paste (⌘V)"
             case .typeDirectly: return "Type characters directly"
             }
         }
@@ -57,19 +57,32 @@ final class TextInjector {
             return .copiedOnly
         }
 
+        // Auto prefers unicode typing over ⌘V as the fallback: macOS 26.5's
+        // WindowServer has been seen dropping modifier-bearing synthesized
+        // events (⌘V) from ad-hoc-signed binaries, while bare typing events
+        // pass. Paste remains available as an explicit setting.
+        let outcome: Outcome
         switch method {
         case .auto:
-            if injectViaAccessibility(text) { return .insertedDirectly }
-            await injectViaPasteboard(text)
-            return .pasted
+            if injectViaAccessibility(text) {
+                outcome = .insertedDirectly
+            } else {
+                injectViaTyping(text)
+                outcome = .typed
+            }
         case .pasteOnly:
             await injectViaPasteboard(text)
-            return .pasted
+            outcome = .pasted
         case .typeDirectly:
-            if injectViaAccessibility(text) { return .insertedDirectly }
-            injectViaTyping(text)
-            return .typed
+            if injectViaAccessibility(text) {
+                outcome = .insertedDirectly
+            } else {
+                injectViaTyping(text)
+                outcome = .typed
+            }
         }
+        NSLog("Discotype: injected %d chars via %@ (method: %@)", text.count, String(describing: outcome), method.rawValue)
+        return outcome
     }
 
     // MARK: - AX path

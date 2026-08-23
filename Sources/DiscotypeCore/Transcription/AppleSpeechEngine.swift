@@ -54,7 +54,7 @@ actor AppleSpeechEngine: TranscriptionEngine {
             throw EngineError.localeUnsupported(locale)
         }
 
-        let probe = SpeechTranscriber(locale: supported, preset: .progressiveTranscription)
+        let probe = Self.makeTranscriber(locale: supported)
         let status = await AssetInventory.status(forModules: [probe])
         if status == .unsupported {
             throw EngineError.localeUnsupported(supported)
@@ -92,7 +92,7 @@ actor AppleSpeechEngine: TranscriptionEngine {
         guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
             throw EngineError.localeUnsupported(locale)
         }
-        let transcriber = SpeechTranscriber(locale: supported, preset: .progressiveTranscription)
+        let transcriber = Self.makeTranscriber(locale: supported)
         let analyzer = SpeechAnalyzer(modules: [transcriber], options: analyzerOptions)
 
         let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
@@ -160,6 +160,17 @@ actor AppleSpeechEngine: TranscriptionEngine {
         analyzer = nil
         transcriber = nil
         resultsTask = nil
+    }
+
+    /// `.fastResults` trades a little accuracy on the volatile (gray) text
+    /// for noticeably lower display latency; the finalized text is unaffected.
+    private static func makeTranscriber(locale: Locale) -> SpeechTranscriber {
+        SpeechTranscriber(
+            locale: locale,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults, .fastResults],
+            attributeOptions: []
+        )
     }
 
     private static func append(_ fragment: String, to base: String) -> String {
