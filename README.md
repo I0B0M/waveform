@@ -27,10 +27,12 @@ The menu-bar icon (waveform + mic) shows **live permission status** — if somet
 ## Using it
 
 - **Start/stop**: your hotkey (Settings offers ⌘X, ⌥Space, ⌃⌥D, F19, or **double-tap Control**). Dictation also **auto-stops** after ~2.5s of silence once you've spoken (configurable / off).
-- **AI commands** (on-device, free — requires Apple Intelligence enabled): start your dictation with a command and ramble; the local model restructures it before inserting:
-  - *"Make this message better and more structured, — okay so basically we need to move the deadline and…"*
-  - *"Create a quick prompt for me, I want an agent that reviews my PRs and…"*
-  If the model is unavailable or the rewrite looks wrong, the text inserts as dictated — the feature can only add value, never lose your words.
+- **AI commands** (on-device, free — requires Apple Intelligence enabled). Say a `//command` at the start and then ramble; the local model restructures everything after it:
+  - **"double slash prompt"** — turns your ramble into a clean, organized prompt to paste into Claude/ChatGPT
+  - **"double slash better"** (also `organize`, `structure`, `professional`, `shorter`, `concise`) — tidies a message
+  - Say the command with **nothing after it** while text is selected, and it rewrites the selection in place
+  - Natural phrasing ("make this message better, …") still works, but the `//command` form never misfires
+  If the model is unavailable or the rewrite fails a sanity check, your words are inserted as spoken and the HUD says why — it can never silently do nothing.
 - **Personal dictionary** (Settings): one term per line — names, jargon, acronyms. Biases recognition from the next dictation.
 - **Filler removal**: "um okay so basically…" → "Okay, so basically…". Toggleable.
 - All settings save automatically — there is no Save button.

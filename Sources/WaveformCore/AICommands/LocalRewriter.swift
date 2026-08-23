@@ -37,7 +37,10 @@ final class LocalRewriter {
     /// Returns the rewritten text, or nil when the caller should fall back to
     /// the raw payload.
     func rewrite(_ command: DictationCommand) async -> String? {
-        guard Self.isAvailable else { return nil }
+        guard Self.isAvailable else {
+            NSLog("Waveform: on-device model unavailable — cannot rewrite")
+            return nil
+        }
 
         let instructions = command.kind == .improve
             ? Self.improveInstructions
@@ -133,6 +136,7 @@ final class LocalRewriter {
         let lowered = text.lowercased()
         let preambles = ["here is", "here's", "sure,", "sure!", "certainly", "as an ai", "i can't", "i cannot"]
         if preambles.contains(where: { lowered.hasPrefix($0) }) {
+            NSLog("Waveform: rewrite rejected — model replied with a preamble")
             return nil
         }
 
@@ -140,11 +144,19 @@ final class LocalRewriter {
         // balloon with invented content. Prompts get more slack upward
         // (structure adds headers) but must not collapse.
         let ratio = Double(text.count) / Double(max(command.payload.count, 1))
+        // A restructure can legitimately grow (headings, bullets); building a
+        // prompt from a short ramble grows a lot more.
         switch command.kind {
         case .improve:
-            guard ratio >= 0.35, ratio <= 2.0 else { return nil }
+            guard ratio >= 0.3, ratio <= 3.5 else {
+                NSLog("Waveform: rewrite rejected — length ratio %.2f", ratio)
+                return nil
+            }
         case .createPrompt:
-            guard ratio >= 0.3, ratio <= 4.0 else { return nil }
+            guard ratio >= 0.3, ratio <= 10.0 else {
+                NSLog("Waveform: prompt rejected — length ratio %.2f", ratio)
+                return nil
+            }
         }
         return text
     }

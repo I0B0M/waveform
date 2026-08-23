@@ -33,6 +33,43 @@ struct CommandDetectorTests {
         #expect(CommandDetector.detect(in: "I will make this project better over time.") == nil)
     }
 
+    @Test("spoken slash-prompt prefix builds a prompt")
+    func spokenPromptPrefix() {
+        let command = CommandDetector.detect(in: "Double slash prompt, I want an agent that reviews my pull requests.")
+        #expect(command?.kind == .createPrompt)
+        #expect(command?.wasExplicit == true)
+        #expect(command?.payload == "I want an agent that reviews my pull requests.")
+    }
+
+    @Test("single slash and symbol forms also work")
+    func prefixVariants() {
+        #expect(CommandDetector.detect(in: "Slash prompt, build me a summarizer.")?.kind == .createPrompt)
+        #expect(CommandDetector.detect(in: "//prompt build me a summarizer")?.kind == .createPrompt)
+        #expect(CommandDetector.detect(in: "Slash slash better, we should ship on Friday.")?.kind == .improve)
+        #expect(CommandDetector.detect(in: "Slash organize, notes from the call today.")?.kind == .improve)
+    }
+
+    @Test("explicit prefix with no payload targets the selection")
+    func prefixNoPayload() {
+        let command = CommandDetector.detect(in: "Double slash prompt.")
+        #expect(command?.kind == .createPrompt)
+        #expect(command?.payload.isEmpty == true)
+        #expect(command?.wasExplicit == true)
+    }
+
+    @Test("natural language is still detected but not marked explicit")
+    func naturalLanguageNotExplicit() {
+        let command = CommandDetector.detect(in: "Make this message better, we should move the deadline to next week.")
+        #expect(command?.kind == .improve)
+        #expect(command?.wasExplicit == false)
+    }
+
+    @Test("the word slash mid-sentence is not a command")
+    func slashMidSentence() {
+        #expect(CommandDetector.detect(in: "The read slash write split is done.") == nil)
+        #expect(CommandDetector.detect(in: "Use a forward slash between them.") == nil)
+    }
+
     @Test("selection instructions are recognized")
     func selectionInstructions() {
         #expect(CommandDetector.selectionInstruction(in: "Make this more organized.") != nil)

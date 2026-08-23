@@ -12,6 +12,27 @@ public enum HUDSnapshot {
     }
 
     @MainActor
+    public static func renderCompactAndExit(to path: String) {
+        _ = NSApplication.shared
+        let state = HUDState()
+        state.level = 0.55
+        let scene = ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.10, green: 0.08, blue: 0.20),
+                    Color(red: 0.03, green: 0.02, blue: 0.08),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            HUDView(state: state, frozenTime: 1.85)
+                .padding(40)
+        }
+        .frame(width: 560, height: 160)
+        render(view: scene, size: NSSize(width: 560, height: 160), to: path)
+    }
+
+    @MainActor
     public static func renderAndExit(to path: String) {
         _ = NSApplication.shared
 

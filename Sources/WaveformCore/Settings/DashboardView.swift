@@ -141,9 +141,10 @@ private struct HomeTab: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Try saying").font(.headline)
-                    tip("“Make this message better and more structured, …then just ramble.”")
-                    tip("“Create a quick prompt for me, I want an agent that…”")
-                    tip("Select text anywhere first, then: “make this more organized.”")
+                    tip("“Double slash prompt — I want an agent that reviews my PRs…” → a clean, organized prompt")
+                    tip("“Double slash better — okay so basically we should move the deadline…” → a tidy message")
+                    tip("Select text anywhere first, then just: “double slash better.”")
+                    tip("Also works: “slash organize”, “slash professional”, “slash shorter”.")
                 }
                 .padding(16)
                 .background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.05)))

@@ -183,17 +183,47 @@ final class DictationCoordinator {
                 return
             }
 
-            // Voice snippet? ("insert my calendar link") — expansion wins
-            // over every other interpretation.
+            // Interpretation, most-explicit first. Each branch is mutually
+            // exclusive: a snippet is not a command, a command is not speech.
+            var failureNotice: String?
+
+            // 1. Voice snippet ("insert my calendar link").
             if let expansion = SnippetMatcher.expansion(for: cleaned, in: AppSettings.shared.snippets) {
                 cleaned = expansion
             }
-            // Selection command mode: text was selected and the user spoke a
-            // short instruction — transform the SELECTION, not the speech.
+            // 2. Explicit command prefix ("//prompt …", "//better …"). With no
+            //    payload it targets the current selection.
             else if AppSettings.shared.aiCommandsEnabled,
-               LocalRewriter.isAvailable,
-               let selection = selectionAtStart,
-               let instruction = CommandDetector.selectionInstruction(in: cleaned) {
+                    let command = CommandDetector.detect(in: cleaned),
+                    command.wasExplicit {
+                let payload = command.payload.isEmpty ? (selectionAtStart ?? "") : command.payload
+                if payload.isEmpty {
+                    failureNotice = "Nothing to work on — say the text after the command"
+                } else if !LocalRewriter.isAvailable {
+                    cleaned = payload
+                    failureNotice = "Apple Intelligence is off — inserted as spoken"
+                } else {
+                    hud.state.phase = .polishing
+                    let resolved = DictationCommand(
+                        kind: command.kind,
+                        payload: payload,
+                        wasExplicit: true
+                    )
+                    if let rewritten = await rewriter.rewrite(resolved) {
+                        cleaned = rewritten
+                    } else {
+                        // Never lose the words: insert the payload and say so.
+                        cleaned = payload
+                        failureNotice = "Rewrite failed — inserted as spoken"
+                    }
+                }
+            }
+            // 3. Selection instruction ("make this more organized") with a
+            //    selection present — transform the SELECTION, not the speech.
+            else if AppSettings.shared.aiCommandsEnabled,
+                    LocalRewriter.isAvailable,
+                    let selection = selectionAtStart,
+                    let instruction = CommandDetector.selectionInstruction(in: cleaned) {
                 hud.state.phase = .polishing
                 if let transformed = await rewriter.transform(selection: selection, instruction: instruction) {
                     cleaned = transformed
@@ -201,25 +231,36 @@ final class DictationCoordinator {
                     // Leave the user's selection untouched rather than
                     // overwriting it with the spoken instruction.
                     hud.state.phase = .error("Rewrite failed — selection left unchanged")
-                    hideHUDAfterDelay()
+                    hideHUDAfterDelay(seconds: 3)
                     state = .idle
                     return
                 }
             }
-            // Spoken AI command ("make this better, …")? Rewrite on-device;
-            // any failure falls back to the payload as dictated.
+            // 4. Natural-language command ("make this message better, …").
             else if AppSettings.shared.aiCommandsEnabled,
-               LocalRewriter.isAvailable,
-               let command = CommandDetector.detect(in: cleaned) {
+                    LocalRewriter.isAvailable,
+                    let command = CommandDetector.detect(in: cleaned) {
                 hud.state.phase = .polishing
-                cleaned = await rewriter.rewrite(command) ?? command.payload
+                if let rewritten = await rewriter.rewrite(command) {
+                    cleaned = rewritten
+                } else {
+                    cleaned = command.payload
+                    failureNotice = "Rewrite failed — inserted as spoken"
+                }
             }
-            // Spoken self-corrections ("…at 5, no wait, 6") — resolve them.
+            // 5. Spoken self-corrections ("…at 5, no wait, 6").
             else if AppSettings.shared.aiCommandsEnabled,
-               LocalRewriter.isAvailable,
-               SelfCorrection.hasMarkers(cleaned) {
+                    LocalRewriter.isAvailable,
+                    SelfCorrection.hasMarkers(cleaned) {
                 hud.state.phase = .polishing
                 cleaned = await rewriter.resolveCorrections(in: cleaned) ?? cleaned
+            }
+
+            if let failureNotice, cleaned.isEmpty {
+                hud.state.phase = .error(failureNotice)
+                hideHUDAfterDelay(seconds: 3)
+                state = .idle
+                return
             }
 
             let outcome = await injector.inject(cleaned, method: AppSettings.shared.insertionMethod)
@@ -232,7 +273,12 @@ final class DictationCoordinator {
             }
             switch outcome {
             case .insertedDirectly, .pasted, .typed:
-                hud.hide()
+                if let failureNotice {
+                    hud.state.phase = .error(failureNotice)
+                    hideHUDAfterDelay(seconds: 3)
+                } else {
+                    hud.hide()
+                }
             case .copiedOnly:
                 hud.state.phase = .noAccessibility
                 hideHUDAfterDelay(seconds: 3)

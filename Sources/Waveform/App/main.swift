@@ -16,6 +16,8 @@ MainActor.assumeIsolated {
         HUDSnapshot.renderAndExit(to: arguments[index + 1])
     } else if let index = arguments.firstIndex(of: "--render-settings"), arguments.indices.contains(index + 1) {
         HUDSnapshot.renderSettingsAndExit(to: arguments[index + 1])
+    } else if let index = arguments.firstIndex(of: "--render-hud-compact"), arguments.indices.contains(index + 1) {
+        HUDSnapshot.renderCompactAndExit(to: arguments[index + 1])
     } else if arguments.contains("--diagnose") {
         Diagnostics.runAndExit()
     } else if arguments.contains("--fm-check") {

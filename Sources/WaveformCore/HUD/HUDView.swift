@@ -38,83 +38,65 @@ struct HUDView: View {
 
     private var isActive: Bool { state.phase == .listening }
 
-    /// Compact until words arrive (or something needs attention).
+    /// Compact until words arrive (or something needs attention). Transcripts
+    /// only grow within a session, so this never flip-flops mid-dictation.
     private var expanded: Bool {
         !state.transcript.isEmpty || state.phase != .listening
     }
 
+    // One capsule that MORPHS between the two sizes — the buttons and text are
+    // always in the tree, animating their width/height/opacity, so there is no
+    // cross-fade between two different views (which read as a flicker).
     var body: some View {
-        Group {
-            if expanded {
-                expandedPill
-            } else {
-                compactPill
-            }
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: expanded)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-    }
-
-    // MARK: - Compact: just the living waveform
-
-    private var compactPill: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 6, height: 6)
-                .shadow(color: statusColor.opacity(0.9), radius: 4)
-            WaveformView(level: state.level, animating: true, frozenTime: frozenTime)
-                .frame(width: 150, height: 34)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 9)
-        .background(pillBackground)
-        .overlay(pillRim)
-        .shadow(color: Self.violet.opacity(0.30), radius: 18, y: 5)
-        .transition(.scale(scale: 0.7).combined(with: .opacity))
-    }
-
-    // MARK: - Expanded: waveform, live text, controls
-
-    private var expandedPill: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: expanded ? 12 : 9) {
             roundButton(symbol: "xmark", color: Self.pink, enabled: isActive) { onCancel?() }
+                .frame(width: expanded ? 26 : 0)
+                .opacity(expanded ? 1 : 0)
+                .scaleEffect(expanded ? 1 : 0.4)
                 .help("Cancel — discard this dictation")
 
-            VStack(spacing: 5) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: expanded ? 0 : 6, height: 6)
+                .opacity(expanded ? 0 : 1)
+                .shadow(color: statusColor.opacity(0.9), radius: 4)
+
+            VStack(spacing: expanded ? 5 : 0) {
                 WaveformView(
                     level: state.level,
                     animating: state.phase != .noAccessibility,
                     frozenTime: frozenTime
                 )
-                .frame(height: 38)
+                .frame(height: expanded ? 38 : 30)
 
-                liveText
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 5, height: 5)
-                        .shadow(color: statusColor.opacity(0.9), radius: 4)
+                VStack(alignment: .leading, spacing: 3) {
+                    liveText
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Text(statusText)
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .tracking(2.5)
                         .foregroundStyle(statusColor.opacity(0.95))
-                    Spacer(minLength: 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(height: expanded ? 46 : 0)
+                .opacity(expanded ? 1 : 0)
+                .clipped()
             }
 
             roundButton(symbol: "checkmark", color: Self.cyan, enabled: isActive) { onFinish?() }
+                .frame(width: expanded ? 26 : 0)
+                .opacity(expanded ? 1 : 0)
+                .scaleEffect(expanded ? 1 : 0.4)
                 .help("Finish now and insert")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .frame(width: 500)
+        .padding(.horizontal, expanded ? 14 : 17)
+        .padding(.vertical, expanded ? 11 : 9)
+        .frame(width: expanded ? 500 : 196)
         .background(pillBackground)
         .overlay(pillRim)
-        .shadow(color: Self.violet.opacity(0.30), radius: 22, y: 6)
-        .transition(.scale(scale: 0.85).combined(with: .opacity))
+        .shadow(color: Self.violet.opacity(0.30), radius: expanded ? 22 : 16, y: 5)
+        .animation(.spring(response: 0.40, dampingFraction: 0.84), value: expanded)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
     /// Settled words bright, still-changing tail dimmed — you can watch the
