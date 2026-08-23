@@ -3,12 +3,18 @@ import AppKit
 
 /// A global hotkey the user can pick in Settings.
 ///
-/// Carbon `RegisterEventHotKey` is used deliberately instead of a CGEventTap or
-/// NSEvent global monitor: it needs no Accessibility/Input Monitoring permission,
-/// costs nothing while idle (no tap callback on every keystroke), and it CONSUMES
-/// the event — the frontmost app never sees the keystroke, so ⌘X won't also cut.
-/// The trade-off of ⌘X specifically: while Discotype runs, ⌘X no longer performs
-/// Cut anywhere. That is the user's explicit choice; alternatives are offered.
+/// Two mechanisms, chosen per preset:
+///
+/// 1. Key combos (⌘X, ⌥Space, …): Carbon `RegisterEventHotKey` — needs no
+///    permission, costs nothing while idle, and CONSUMES the event so the
+///    frontmost app never sees the keystroke (⌘X won't also cut).
+///
+/// 2. Bare-modifier presets (double-tap ⌃): a listen-only `CGEventTap` on
+///    modifier/keyboard/mouse events. Carbon fundamentally cannot register a
+///    bare modifier, and `NSEvent` global monitors fail *silently* without
+///    Accessibility — a tap fails *loudly* (creation returns nil), which lets
+///    the app tell the user exactly what's missing and retry after the grant.
+///    Not consuming is fine here: a lone Control press means nothing to apps.
 public enum HotkeyPreset: String, CaseIterable, Identifiable {
     case commandX
     case optionSpace
@@ -28,10 +34,9 @@ public enum HotkeyPreset: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Bare-modifier presets can't use Carbon hotkeys; they watch modifier
-    /// events instead, which needs the Accessibility permission (already
-    /// required for text insertion) and never swallows anything — a lone
-    /// Control press has no meaning to other apps anyway.
+    /// Bare-modifier presets watch events instead of registering a Carbon
+    /// hotkey; that needs the Accessibility permission (the same one used for
+    /// inserting text).
     public var isBareModifier: Bool {
         self == .controlDoubleTap
     }
@@ -60,25 +65,35 @@ public enum HotkeyPreset: String, CaseIterable, Identifiable {
 final class HotkeyManager {
     var onHotkey: (() -> Void)?
 
+    // Carbon path.
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
 
-    // Double-tap-Control state.
-    private var monitors: [Any] = []
-    private var controlIsDown = false
-    private var holdWasContaminated = false
-    private var lastCleanTapAt: TimeInterval = 0
-    private let doubleTapWindow: TimeInterval = 0.45
+    // Event-tap path.
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+    private var detector = DoubleTapDetector()
+    private var controlWasDown = false
 
-    enum HotkeyError: Error {
+    enum HotkeyError: Error, LocalizedError {
         case registrationFailed(OSStatus)
+        case accessibilityRequired
+
+        var errorDescription: String? {
+            switch self {
+            case .registrationFailed(let status):
+                return "Hotkey registration failed (\(status))."
+            case .accessibilityRequired:
+                return "Detecting a bare modifier key needs the Accessibility permission."
+            }
+        }
     }
 
     func register(preset: HotkeyPreset) throws {
         unregister()
 
         if preset.isBareModifier {
-            startControlDoubleTapMonitor()
+            try startEventTap()
             return
         }
         installHandlerIfNeeded()
@@ -104,73 +119,19 @@ final class HotkeyManager {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
         }
-        for monitor in monitors {
-            NSEvent.removeMonitor(monitor)
+        if let source = runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            runLoopSource = nil
         }
-        monitors = []
-        controlIsDown = false
-        lastCleanTapAt = 0
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            eventTap = nil
+        }
+        detector = DoubleTapDetector()
+        controlWasDown = false
     }
 
-    // MARK: - Double-tap Control
-
-    /// Two clean Control taps (down → up with nothing else pressed) within
-    /// 0.45s. A tap is discarded when any key, mouse button, or additional
-    /// modifier is used while Control is held — so ⌃-clicks (right-click) and
-    /// ⌃-shortcuts never trigger dictation. Global NSEvent monitors observe
-    /// only (they can't swallow events), which is fine: a lone Control press
-    /// means nothing to other apps. They silently receive nothing until the
-    /// Accessibility permission is granted.
-    private func startControlDoubleTapMonitor() {
-        let flagsHandler: (NSEvent) -> Void = { [weak self] event in
-            self?.handleFlagsChanged(event)
-        }
-        let contaminate: (NSEvent) -> Void = { [weak self] _ in
-            guard let self, self.controlIsDown else { return }
-            self.holdWasContaminated = true
-        }
-
-        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: flagsHandler) {
-            monitors.append(monitor)
-        }
-        monitors.append(NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
-            flagsHandler(event)
-            return event
-        } as Any)
-        let contaminating: NSEvent.EventTypeMask = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
-        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: contaminating, handler: contaminate) {
-            monitors.append(monitor)
-        }
-        monitors.append(NSEvent.addLocalMonitorForEvents(matching: contaminating) { event in
-            contaminate(event)
-            return event
-        } as Any)
-    }
-
-    private func handleFlagsChanged(_ event: NSEvent) {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if !controlIsDown, flags == .control {
-            // Clean start: Control went down with no other modifier active.
-            controlIsDown = true
-            holdWasContaminated = false
-        } else if controlIsDown, flags.contains(.control), flags != .control {
-            // A second modifier joined (⌃⌥ etc.) — not a bare tap.
-            holdWasContaminated = true
-        } else if controlIsDown, !flags.contains(.control) {
-            controlIsDown = false
-            let now = ProcessInfo.processInfo.systemUptime
-            guard !holdWasContaminated else {
-                lastCleanTapAt = 0
-                return
-            }
-            if now - lastCleanTapAt <= doubleTapWindow {
-                lastCleanTapAt = 0
-                onHotkey?()
-            } else {
-                lastCleanTapAt = now
-            }
-        }
-    }
+    // MARK: - Carbon path
 
     private func installHandlerIfNeeded() {
         guard eventHandlerRef == nil else { return }
@@ -194,5 +155,90 @@ final class HotkeyManager {
             selfPointer,
             &eventHandlerRef
         )
+    }
+
+    // MARK: - Event-tap path (double-tap Control)
+
+    private func startEventTap() throws {
+        let interesting: [CGEventType] = [
+            .flagsChanged, .keyDown,
+            .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel,
+        ]
+        var mask: CGEventMask = 0
+        for type in interesting {
+            mask |= CGEventMask(1) << CGEventMask(type.rawValue)
+        }
+
+        let selfPointer = Unmanaged.passUnretained(self).toOpaque()
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: mask,
+            callback: { _, type, event, userInfo in
+                guard let userInfo else { return Unmanaged.passUnretained(event) }
+                let manager = Unmanaged<HotkeyManager>.fromOpaque(userInfo).takeUnretainedValue()
+                // Extract primitives before hopping threads; CGEvents must not
+                // be retained past the callback.
+                let flags = event.flags
+                let seconds = Double(event.timestamp) / 1_000_000_000
+                DispatchQueue.main.async {
+                    manager.handleTapEvent(type: type, flags: flags, timestamp: seconds)
+                }
+                return Unmanaged.passUnretained(event)
+            },
+            userInfo: selfPointer
+        ) else {
+            throw HotkeyError.accessibilityRequired
+        }
+
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        eventTap = tap
+        runLoopSource = source
+    }
+
+    private func handleTapEvent(type: CGEventType, flags: CGEventFlags, timestamp: TimeInterval) {
+        switch type {
+        case .tapDisabledByTimeout, .tapDisabledByUserInput:
+            // The system paused us (slow callback or secure input); resume.
+            if let tap = eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            return
+
+        case .flagsChanged:
+            let relevant: CGEventFlags = [
+                .maskControl, .maskShift, .maskCommand, .maskAlternate, .maskSecondaryFn,
+            ]
+            let active = flags.intersection(relevant)
+            let controlIsDown = active.contains(.maskControl)
+            let controlIsAlone = active == .maskControl
+
+            if controlIsDown && !controlWasDown {
+                controlWasDown = true
+                fire(detector.process(controlIsAlone ? .modifierDown : .contamination, at: timestamp))
+            } else if controlIsDown && controlWasDown && !controlIsAlone {
+                // A second modifier joined mid-hold (⌃⌥ etc.).
+                fire(detector.process(.contamination, at: timestamp))
+            } else if !controlIsDown && controlWasDown {
+                controlWasDown = false
+                fire(detector.process(.modifierUp, at: timestamp))
+            } else if !controlIsDown && !active.isEmpty {
+                // Some other lone modifier tapped between our taps.
+                fire(detector.process(.contamination, at: timestamp))
+            }
+
+        default:
+            // Keys, clicks, scrolls — contaminate holds and pending taps.
+            fire(detector.process(.contamination, at: timestamp))
+        }
+    }
+
+    private func fire(_ triggered: Bool) {
+        if triggered {
+            onHotkey?()
+        }
     }
 }

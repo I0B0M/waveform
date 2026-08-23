@@ -15,6 +15,12 @@ final class HUDController {
     let state = HUDState()
     private var panel: HUDPanel?
 
+    /// Build the panel and SwiftUI hosting tree ahead of time (app launch)
+    /// so the first hotkey press doesn't pay the construction cost.
+    func preload() {
+        _ = ensurePanel()
+    }
+
     func show() {
         state.reset()
         let panel = ensurePanel()

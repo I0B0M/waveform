@@ -27,10 +27,17 @@ actor AppleSpeechEngine: TranscriptionEngine {
     private var prepared = false
     private var cachedFormat: AVAudioFormat?
 
+    /// Keep the system-side model loaded for the whole process so every
+    /// dictation after the first starts hot.
+    private let analyzerOptions = SpeechAnalyzer.Options(
+        priority: .userInitiated,
+        modelRetention: .processLifetime
+    )
+
     // Per-session state.
     private var analyzer: SpeechAnalyzer?
     private var transcriber: SpeechTranscriber?
-    private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
+    private let inputContinuation = LockedBox<AsyncStream<AnalyzerInput>.Continuation?>(nil)
     private var resultsTask: Task<String, Error>?
     private var finalizedText = ""
 
@@ -62,6 +69,13 @@ actor AppleSpeechEngine: TranscriptionEngine {
         }
 
         cachedFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [probe])
+
+        // Prewarm: force the model into memory now (app launch) instead of on
+        // the first hotkey press.
+        let warmup = SpeechAnalyzer(modules: [probe], options: analyzerOptions)
+        try? await warmup.prepareToAnalyze(in: cachedFormat)
+        await warmup.cancelAndFinishNow()
+
         prepared = true
     }
 
@@ -79,12 +93,12 @@ actor AppleSpeechEngine: TranscriptionEngine {
             throw EngineError.localeUnsupported(locale)
         }
         let transcriber = SpeechTranscriber(locale: supported, preset: .progressiveTranscription)
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let analyzer = SpeechAnalyzer(modules: [transcriber], options: analyzerOptions)
 
         let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
         self.transcriber = transcriber
         self.analyzer = analyzer
-        self.inputContinuation = continuation
+        self.inputContinuation.value = continuation
         self.finalizedText = ""
 
         resultsTask = Task {
@@ -110,18 +124,16 @@ actor AppleSpeechEngine: TranscriptionEngine {
         try await analyzer.start(inputSequence: stream)
     }
 
+    // Called from the audio thread: yields straight into the stream with no
+    // actor hop or per-buffer Task allocation.
     nonisolated func feed(_ buffer: AVAudioPCMBuffer) {
-        Task { await self.yield(buffer) }
-    }
-
-    private func yield(_ buffer: AVAudioPCMBuffer) {
-        inputContinuation?.yield(AnalyzerInput(buffer: buffer))
+        inputContinuation.value?.yield(AnalyzerInput(buffer: buffer))
     }
 
     func finishSession() async throws -> String {
         guard let analyzer, let resultsTask else { throw EngineError.noSession }
-        inputContinuation?.finish()
-        inputContinuation = nil
+        inputContinuation.value?.finish()
+        inputContinuation.value = nil
 
         // A hung finalization must not wedge the app (Murmur has no such
         // timeout); 10s is generous for flushing a few seconds of tail audio.
@@ -135,8 +147,8 @@ actor AppleSpeechEngine: TranscriptionEngine {
     }
 
     func cancelSession() async {
-        inputContinuation?.finish()
-        inputContinuation = nil
+        inputContinuation.value?.finish()
+        inputContinuation.value = nil
         resultsTask?.cancel()
         if let analyzer {
             await analyzer.cancelAndFinishNow()

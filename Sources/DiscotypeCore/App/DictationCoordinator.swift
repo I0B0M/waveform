@@ -24,6 +24,14 @@ final class DictationCoordinator {
 
     private var enginePrepared = false
     private var prepareFailure: String?
+    private var promptedAccessibility = false
+
+    // Silence auto-stop state.
+    private var lastVoiceActivityAt: TimeInterval = 0
+    private var sawSpeech = false
+    private var silenceTimer: Timer?
+    /// Mic level above this counts as voice activity (0…1 on the -50…0 dBFS map).
+    private let voiceLevelThreshold: Float = 0.22
 
     var engineStatusLine: String? {
         if enginePrepared { return nil }
@@ -34,6 +42,7 @@ final class DictationCoordinator {
     // MARK: - Engine warm-up
 
     func prepareEngine() async {
+        hud.preload()
         do {
             try await engine.prepare()
             enginePrepared = true
@@ -60,17 +69,28 @@ final class DictationCoordinator {
         guard state == .idle else { return }
         state = .starting
 
-        // Microphone permission (first run prompts; the HUD would hide the dialog,
-        // so ask before showing it).
-        let micGranted = await AVCaptureDevice.requestAccess(for: .audio)
-        guard micGranted else {
+        // Hot path: when the mic is already authorized there is nothing to
+        // wait for — show the HUD immediately. Prompts only on first run.
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            break
+        case .notDetermined:
+            guard await AVCaptureDevice.requestAccess(for: .audio) else {
+                state = .idle
+                showTransientError("Microphone access denied — enable it in System Settings → Privacy.")
+                return
+            }
+        default:
             state = .idle
             showTransientError("Microphone access denied — enable it in System Settings → Privacy.")
             return
         }
 
-        // Nudge the Accessibility prompt on first use so injection works later.
-        _ = TextInjector.isTrusted(promptIfNeeded: true)
+        // Nudge the Accessibility prompt once per launch so injection works later.
+        if !promptedAccessibility {
+            promptedAccessibility = true
+            _ = TextInjector.isTrusted(promptIfNeeded: true)
+        }
 
         if !enginePrepared {
             await prepareEngine()
@@ -83,11 +103,21 @@ final class DictationCoordinator {
 
         hud.show()
         let hudState = hud.state
+        sawSpeech = false
+        lastVoiceActivityAt = ProcessInfo.processInfo.systemUptime
 
         do {
             try await engine.startSession { update in
-                Task { @MainActor in
-                    hudState.transcript = update.display
+                Task { @MainActor [weak self] in
+                    if update.display != hudState.transcript {
+                        hudState.transcript = update.display
+                        // The recognizer producing new text is the strongest
+                        // "still speaking" signal there is.
+                        if let self, !update.display.isEmpty {
+                            self.sawSpeech = true
+                            self.lastVoiceActivityAt = ProcessInfo.processInfo.systemUptime
+                        }
+                    }
                 }
             }
 
@@ -95,13 +125,17 @@ final class DictationCoordinator {
             audio.onBuffer = { [engine] buffer in
                 engine.feed(buffer)
             }
-            audio.onLevel = { level in
+            audio.onLevel = { [weak self] level in
                 Task { @MainActor in
                     hudState.pushLevel(level)
+                    if let self, level > self.voiceLevelThreshold {
+                        self.lastVoiceActivityAt = ProcessInfo.processInfo.systemUptime
+                    }
                 }
             }
             try audio.start(targetFormat: format)
             state = .recording
+            startSilenceWatchdog()
         } catch {
             audio.stop()
             await engine.cancelSession()
@@ -114,6 +148,7 @@ final class DictationCoordinator {
     private func stop() async {
         guard state == .recording else { return }
         state = .finishing
+        stopSilenceWatchdog()
         hud.state.phase = .finalizing
         audio.stop()
 
@@ -143,6 +178,37 @@ final class DictationCoordinator {
             hideHUDAfterDelay()
         }
         state = .idle
+    }
+
+    // MARK: - Silence auto-stop
+
+    /// Ends dictation on its own once you have spoken and then stayed silent
+    /// for the configured grace period. Brief pauses between sentences keep
+    /// the session alive: any voice-level activity or new recognized text
+    /// resets the clock. Never fires before the first recognized words, so
+    /// gathering your thoughts at the start costs nothing. The hotkey still
+    /// stops manually at any time.
+    private func startSilenceWatchdog() {
+        stopSilenceWatchdog()
+        let timeout = AppSettings.shared.silenceTimeout
+        guard timeout > 0 else { return }
+
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.state == .recording, self.sawSpeech else { return }
+                let quietFor = ProcessInfo.processInfo.systemUptime - self.lastVoiceActivityAt
+                if quietFor >= timeout {
+                    await self.stop()
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        silenceTimer = timer
+    }
+
+    private func stopSilenceWatchdog() {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
     }
 
     // MARK: - Helpers

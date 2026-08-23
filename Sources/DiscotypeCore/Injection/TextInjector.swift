@@ -130,14 +130,16 @@ final class TextInjector {
         let ourChangeCount = pasteboard.changeCount
 
         // Give the pasteboard server a beat before the target app reads it.
-        try? await Task.sleep(nanoseconds: 60_000_000)
+        try? await Task.sleep(nanoseconds: 40_000_000)
         postCommandV()
 
-        // Restore after the target app has had time to service the paste —
-        // but only if nobody else wrote to the pasteboard in the meantime.
-        try? await Task.sleep(nanoseconds: 600_000_000)
-        if pasteboard.changeCount == ourChangeCount {
-            restorePasteboard(pasteboard, from: snapshot)
+        // Restore off the critical path — the caller (and the HUD) shouldn't
+        // wait 600ms for clipboard etiquette. Only restore if nobody else
+        // wrote to the pasteboard in the meantime.
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard let self, pasteboard.changeCount == ourChangeCount else { return }
+            self.restorePasteboard(pasteboard, from: snapshot)
         }
     }
 

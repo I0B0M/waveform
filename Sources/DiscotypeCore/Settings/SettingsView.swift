@@ -6,6 +6,12 @@ struct SettingsView: View {
     @State private var hotkeyPreset: HotkeyPreset = AppSettings.shared.hotkeyPreset
     @State private var removeFillers: Bool = AppSettings.shared.removeFillers
     @State private var insertionMethod: TextInjector.Method = AppSettings.shared.insertionMethod
+    @State private var silenceTimeout: Double = AppSettings.shared.silenceTimeout
+
+    private static let silenceChoices: [(label: String, value: Double)] = [
+        ("Off (manual only)", 0), ("1.5 seconds", 1.5), ("2 seconds", 2),
+        ("2.5 seconds", 2.5), ("3 seconds", 3), ("4 seconds", 4), ("5 seconds", 5),
+    ]
 
     var body: some View {
         Form {
@@ -35,6 +41,20 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Section {
+                Picker("Auto-stop after silence", selection: $silenceTimeout) {
+                    ForEach(Self.silenceChoices, id: \.value) { choice in
+                        Text(choice.label).tag(choice.value)
+                    }
+                }
+                .onChange(of: silenceTimeout) { _, newValue in
+                    AppSettings.shared.silenceTimeout = newValue
+                }
+                Text("Dictation ends on its own once you've spoken and then stayed quiet this long. Brief pauses between sentences don't count. The hotkey always stops immediately.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

@@ -9,6 +9,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var coordinator: DictationCoordinator?
     private var settingsWindow: NSWindow?
     private let hotkeyManager = HotkeyManager()
+    private var hotkeyRetryTask: Task<Void, Never>?
+    private var hotkeyWarning: String?
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         let coordinator = DictationCoordinator()
@@ -25,15 +27,37 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func registerHotkey() {
+        hotkeyRetryTask?.cancel()
+        hotkeyRetryTask = nil
         hotkeyManager.onHotkey = { [weak self] in
             self?.coordinator?.toggle()
         }
         let preset = AppSettings.shared.hotkeyPreset
         do {
             try hotkeyManager.register(preset: preset)
+            hotkeyWarning = nil
+        } catch HotkeyManager.HotkeyError.accessibilityRequired {
+            // The tap can't exist until Accessibility is granted. Say so
+            // out loud and re-register automatically once the grant lands.
+            hotkeyWarning = "⚠️ \(preset.label) needs Accessibility — waiting for the grant"
+            NSLog("Discotype: event tap unavailable; prompting for Accessibility")
+            _ = TextInjector.isTrusted(promptIfNeeded: true)
+            hotkeyRetryTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    guard let self else { return }
+                    if TextInjector.isTrusted(promptIfNeeded: false) {
+                        self.registerHotkey()
+                        self.refreshMenu()
+                        return
+                    }
+                }
+            }
         } catch {
+            hotkeyWarning = "⚠️ Hotkey failed: \(error.localizedDescription)"
             NSLog("Discotype: hotkey registration failed: \(error)")
         }
+        refreshMenu()
     }
 
     func hotkeyPresetChanged() {
@@ -71,6 +95,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let hotkeyInfo = NSMenuItem(title: "Hotkey: \(preset.label)", action: nil, keyEquivalent: "")
         hotkeyInfo.isEnabled = false
         menu.addItem(hotkeyInfo)
+
+        if let hotkeyWarning {
+            let warning = NSMenuItem(title: hotkeyWarning, action: nil, keyEquivalent: "")
+            warning.isEnabled = false
+            menu.addItem(warning)
+        }
 
         if let engineStatus = coordinator?.engineStatusLine {
             let statusInfo = NSMenuItem(title: engineStatus, action: nil, keyEquivalent: "")

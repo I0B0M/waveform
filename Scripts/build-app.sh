@@ -14,7 +14,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${1:-release}"
-IDENTITY="${CODESIGN_IDENTITY:--}"
+IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+  # Prefer any real codesigning identity over ad-hoc: ad-hoc identity changes
+  # every rebuild, and macOS then silently drops the Accessibility/Microphone
+  # grants. See README for the one-time self-signed certificate setup.
+  IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' 'NR==1 {print $2}')
+  IDENTITY="${IDENTITY:--}"
+fi
 
 # Only the app product — the test runner uses @testable and is debug-only.
 swift build -c "$CONFIG" --product Discotype
