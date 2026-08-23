@@ -70,6 +70,30 @@ struct CommandDetectorTests {
         #expect(CommandDetector.detect(in: "Use a forward slash between them.") == nil)
     }
 
+    @Test("a natural lead-in before the command still fires")
+    func leadInBeforeCommand() {
+        // Exactly how it came out in live testing.
+        let spoken = "Okay, double slash prompt. Let's see how, I need an agent that reviews my PRs."
+        let command = CommandDetector.detect(in: spoken)
+        #expect(command?.kind == .createPrompt)
+        #expect(command?.wasExplicit == true)
+        #expect(command?.payload.contains("agent that reviews") == true)
+        #expect(command?.payload.hasPrefix("Let's see") == false, "lead-in must not leak into the payload")
+    }
+
+    @Test("request phrasing is detected")
+    func requestPhrasing() {
+        #expect(CommandDetector.detect(in: "I need you to create a prompt to review my pull requests.")?.kind == .createPrompt)
+        #expect(CommandDetector.detect(in: "So I want you to make this message better, we should move the deadline.")?.kind == .improve)
+        #expect(CommandDetector.detect(in: "Okay so make this professional, hey can you send the files.")?.kind == .improve)
+    }
+
+    @Test("a meaningful sentence opener survives in the payload")
+    func payloadOpenerPreserved() {
+        let command = CommandDetector.detect(in: "Double slash better. Now that we shipped, we should tell the client.")
+        #expect(command?.payload == "Now that we shipped, we should tell the client.")
+    }
+
     @Test("selection instructions are recognized")
     func selectionInstructions() {
         #expect(CommandDetector.selectionInstruction(in: "Make this more organized.") != nil)
