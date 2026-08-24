@@ -16,6 +16,12 @@ final class AudioCaptureService {
 
     private var engine: AVAudioEngine?
     private var converter: AVAudioConverter?
+    private var configObserver: NSObjectProtocol?
+    private var targetFormat: AVAudioFormat?
+
+    /// Called when the audio graph could not be rebuilt after a device change,
+    /// so the UI can say so instead of showing a listening pill that is deaf.
+    var onCaptureLost: (@Sendable () -> Void)?
 
     // Level updates are throttled to ~30/s instead of one main-queue hop per
     // audio buffer (an improvement over Murmur, which enqueues per buffer).
@@ -29,6 +35,36 @@ final class AudioCaptureService {
 
     func start(targetFormat: AVAudioFormat?) throws {
         stop()
+        self.targetFormat = targetFormat
+        try startEngine()
+
+        // Plugging in AirPods mid-sentence tears the graph out from under the
+        // tap: buffers simply stop arriving, and without this the HUD keeps
+        // animating at level zero while you talk into nothing.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleConfigurationChange()
+        }
+    }
+
+    private func handleConfigurationChange() {
+        guard engine != nil else { return }
+        Log.app.notice("audio configuration changed — rebuilding capture")
+        do {
+            try startEngine()
+        } catch {
+            Log.app.error("capture rebuild failed: \(String(describing: error), privacy: .public)")
+            teardownEngine()
+            onCaptureLost?()
+        }
+    }
+
+    private func startEngine() throws {
+        teardownEngine()
+        let targetFormat = self.targetFormat
 
         let engine = AVAudioEngine()
         let input = engine.inputNode
@@ -68,6 +104,15 @@ final class AudioCaptureService {
     }
 
     func stop() {
+        if let configObserver {
+            NotificationCenter.default.removeObserver(configObserver)
+            self.configObserver = nil
+        }
+        targetFormat = nil
+        teardownEngine()
+    }
+
+    private func teardownEngine() {
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil

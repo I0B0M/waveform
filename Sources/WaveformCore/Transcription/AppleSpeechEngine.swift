@@ -39,7 +39,9 @@ actor AppleSpeechEngine: TranscriptionEngine {
     private var transcriber: SpeechTranscriber?
     private let inputContinuation = LockedBox<AsyncStream<AnalyzerInput>.Continuation?>(nil)
     private var resultsTask: Task<String, Error>?
-    private var finalizedText = ""
+    /// Text finalized so far, updated as results arrive. Read on the timeout
+    /// path so a slow flush costs the tail of a dictation, not all of it.
+    private let finalizedSoFar = LockedBox<String>("")
 
     init(locale: Locale = Locale.current) {
         self.locale = locale
@@ -108,8 +110,9 @@ actor AppleSpeechEngine: TranscriptionEngine {
         self.transcriber = transcriber
         self.analyzer = analyzer
         self.inputContinuation.value = continuation
-        self.finalizedText = ""
+        self.finalizedSoFar.value = ""
 
+        let salvage = finalizedSoFar
         resultsTask = Task {
             var finalized = ""
             var volatileTail = ""
@@ -119,6 +122,9 @@ actor AppleSpeechEngine: TranscriptionEngine {
                     if result.isFinal {
                         finalized = Self.append(text, to: finalized)
                         volatileTail = ""
+                        // Keep the salvage copy current, so a finalization that
+                        // never returns doesn't take the whole dictation with it.
+                        salvage.value = finalized
                     } else {
                         volatileTail = text
                     }
@@ -144,10 +150,21 @@ actor AppleSpeechEngine: TranscriptionEngine {
         inputContinuation.value?.finish()
         inputContinuation.value = nil
 
-        // A hung finalization must not wedge the app (Murmur has no such
-        // timeout); 10s is generous for flushing a few seconds of tail audio.
-        try await withThrowingTimeout(seconds: 10) {
-            try await analyzer.finalizeAndFinishThroughEndOfInput()
+        // A hung finalization must not wedge the app; 10s is generous for
+        // flushing a few seconds of tail audio. If it does hang, keep the words
+        // already finalized instead of throwing a whole dictation away.
+        do {
+            try await withThrowingTimeout(seconds: 10) {
+                try await analyzer.finalizeAndFinishThroughEndOfInput()
+            }
+        } catch is TimeoutError {
+            let salvaged = finalizedSoFar.value
+            resultsTask.cancel()
+            await analyzer.cancelAndFinishNow()
+            clearSession()
+            guard !salvaged.isEmpty else { throw TimeoutError() }
+            Log.app.notice("finalization timed out; salvaged \(salvaged.count, privacy: .public) characters")
+            return salvaged
         }
 
         let text = try await resultsTask.value

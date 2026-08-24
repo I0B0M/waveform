@@ -159,6 +159,31 @@ Sources/WaveformCore/
 
 Idle cost is ~zero: no audio engine, no timers, no animation while not dictating. The one exception: the double-tap-Control preset keeps a listen-only event tap alive (microseconds per keystroke).
 
-## Roadmap (from studying Wispr Flow — all locally feasible)
+## What's built, and what isn't
 
-Self-correction resolution ("…at 5, no wait, 6pm" → "6pm") · per-app formatting (Slack casual / email formal / code mode) · command mode on selected text ("make this formal") · voice snippets ("insert my calendar link") · dictionary auto-learn from your corrections · history & scratchpad · multilingual picker. Notably: Wispr has **no offline mode at all** — this app's fully local pipeline is the point.
+Shipped and wired into the live pipeline:
+
+| | |
+|---|---|
+| Self-correction resolution | "…at 5, no wait, 6pm" → "6pm" |
+| Spoken formatting | "new paragraph", "bullet point", punctuation, "delete that" |
+| Command mode on a selection | select text, speak an instruction, it's rewritten in place |
+| Prompt library | `//plan`, `//bug`, `//review`, `//ticket` + your own shapes |
+| Voice snippets | say a trigger, get the stored text |
+| Dictionary auto-learn | fix a word by hand and it stops being misheard |
+| History & scratchpad | local, capped, clearable |
+| Per-app style | *partial* — punctuation and casing only, no tone yet |
+
+Not built yet, roughly in the order I'd add them:
+
+- **Hold-to-talk** — the toggle is the only mode today; hold-and-release is what makes Wispr feel effortless
+- **Undo the last insertion** — the app writes arbitrary text into other apps through three mechanisms and there's no way back but manual selection
+- **User-defined commands** — `LocalRewriter.transform` is already generic; only the list of commands is missing
+- **Editable per-app rules** — `AppStyle` hardcodes bundle IDs; that should be a table you control
+- **Custom hotkey recorder** — five fixed presets, and ⌘X-replaces-Cut is a hostile default
+- **Streaming insertion** — words appear as you speak. The data is already split into finalized and volatile for it, but cleanup and commands need the whole transcript, so it has to be a mode
+- **Auto-update, guided first run, a health tab** — permissions are the number-one failure mode and every failure today is a log line nobody reads
+
+Deliberately not doing: **multiple languages** (English only, by choice) and **file/meeting transcription** (MacWhisper owns that; different job).
+
+Worth stating plainly: local dictation is no longer rare — VoiceInk and Superwhisper are local too. What's unusual here is *zero setup*: riding macOS 26's own speech model and Apple Intelligence means no model downloads, no API keys, no Ollama, and a 2.6 MB app. Wispr Flow, by contrast, has no offline mode at all and uploads audio plus screenshots of your active window.

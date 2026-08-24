@@ -162,6 +162,14 @@ final class DictationCoordinator {
                     }
                 }
             }
+            audio.onCaptureLost = { [weak self] in
+                Task { @MainActor in
+                    guard let self, self.state == .recording else { return }
+                    self.hud.state.phase = .error("Microphone lost — press the hotkey to retry")
+                    await self.cancelDictation()
+                    self.hideHUDAfterDelay(seconds: 3)
+                }
+            }
             try audio.start(targetFormat: format)
             state = .recording
             startSilenceWatchdog()
@@ -181,6 +189,12 @@ final class DictationCoordinator {
         hud.state.phase = .finalizing
         audio.stop()
 
+        // Read-and-clear immediately: whatever happens below — empty
+        // transcript, a thrown error, an early return — this dictation is the
+        // only one the ✨ button can affect.
+        let forced = forcedCommand
+        forcedCommand = nil
+
         do {
             let raw = try await engine.finishSession()
             let style: TextCleaner.CleanStyle = AppSettings.shared.contextAwareStyle
@@ -188,7 +202,7 @@ final class DictationCoordinator {
                 : .standard
             let cleaner = TextCleaner(removeFillers: AppSettings.shared.removeFillers, style: style)
             let spoken = AppSettings.shared.voiceCommandsEnabled ? VoiceCommands.apply(to: raw) : raw
-            var cleaned = cleaner.clean(spoken)
+            let cleaned = cleaner.clean(spoken)
 
             if cleaned.isEmpty {
                 hud.hide()
@@ -196,155 +210,92 @@ final class DictationCoordinator {
                 return
             }
 
-            // Interpretation, most-explicit first. Each branch is mutually
-            // exclusive: a snippet is not a command, a command is not speech.
-            var failureNotice: String?
+            let templates = AppSettings.shared.promptTemplates
+            let plan = DictationPlanner.plan(for: DictationContext(
+                text: cleaned,
+                forced: forced,
+                selection: selectionAtStart,
+                snippets: AppSettings.shared.snippets,
+                templates: templates,
+                aiEnabled: AppSettings.shared.aiCommandsEnabled,
+                modelAvailable: LocalRewriter.isAvailable
+            ))
 
-            // 0. The ✨ button was pressed — an explicit, unmistakable request.
-            if let kind = forcedCommand {
-                forcedCommand = nil
-                if !LocalRewriter.isAvailable {
-                    failureNotice = "Apple Intelligence is off — inserted as spoken"
-                } else {
-                    hud.state.phase = .polishing
-                    let subject = selectionAtStart ?? cleaned
-                    let command = DictationCommand(kind: kind, payload: subject, wasExplicit: true)
-                    if let rewritten = await rewriter.rewrite(command) {
-                        cleaned = rewritten
-                    } else {
-                        failureNotice = "Rewrite failed — inserted as spoken"
-                    }
-                }
-            }
-            // 1. Voice snippet ("insert my calendar link").
-            else if let expansion = SnippetMatcher.expansion(for: cleaned, in: AppSettings.shared.snippets) {
-                cleaned = expansion
-            }
-            // 1b. One of the user's prompt templates ("//plan …").
-            else if AppSettings.shared.aiCommandsEnabled,
-                    case let templates = AppSettings.shared.promptTemplates,
-                    let hit = CommandDetector.templateCommand(
-                        in: cleaned,
-                        triggers: templates.map(\.trigger)
-                    ),
-                    let template = templates.first(where: {
-                        $0.trigger.caseInsensitiveCompare(hit.trigger) == .orderedSame
-                    }) {
-                let input = hit.payload.isEmpty ? (selectionAtStart ?? "") : hit.payload
-                if input.isEmpty {
-                    failureNotice = "Nothing to work on — say the details after the command"
-                } else if !LocalRewriter.isAvailable {
-                    cleaned = input
-                    failureNotice = "Apple Intelligence is off — inserted as spoken"
-                } else {
-                    hud.state.phase = .polishing
-                    if let built = await rewriter.build(from: template, input: input) {
-                        cleaned = built
-                    } else {
-                        cleaned = input
-                        failureNotice = "\(template.title) failed — inserted as spoken"
-                    }
-                }
-            }
-            // 2. Explicit command prefix ("//prompt …", "//better …"). With no
-            //    payload it targets the current selection.
-            else if AppSettings.shared.aiCommandsEnabled,
-                    let command = CommandDetector.detect(in: cleaned),
-                    command.wasExplicit {
-                let payload = command.payload.isEmpty ? (selectionAtStart ?? "") : command.payload
-                if payload.isEmpty {
-                    failureNotice = "Nothing to work on — say the text after the command"
-                } else if !LocalRewriter.isAvailable {
-                    cleaned = payload
-                    failureNotice = "Apple Intelligence is off — inserted as spoken"
-                } else if let selection = selectionAtStart,
-                          !command.payload.isEmpty,
-                          CommandDetector.selectionInstruction(in: command.payload) != nil {
-                    // "//better — make it shorter" with text selected: the
-                    // payload is the instruction, the selection is the subject.
-                    hud.state.phase = .polishing
-                    if let transformed = await rewriter.transform(
-                        selection: selection,
-                        instruction: command.payload
-                    ) {
-                        cleaned = transformed
-                    } else {
-                        hud.state.phase = .error("Rewrite failed — selection left unchanged")
-                        hideHUDAfterDelay(seconds: 3)
-                        state = .idle
-                        return
-                    }
-                } else {
-                    hud.state.phase = .polishing
-                    let resolved = DictationCommand(
-                        kind: command.kind,
-                        payload: payload,
-                        wasExplicit: true
-                    )
-                    if let rewritten = await rewriter.rewrite(resolved) {
-                        cleaned = rewritten
-                    } else {
-                        // Never lose the words: insert the payload and say so.
-                        cleaned = payload
-                        failureNotice = "Rewrite failed — inserted as spoken"
-                    }
-                }
-            }
-            // 3. Selection instruction ("make this more organized") with a
-            //    selection present — transform the SELECTION, not the speech.
-            else if AppSettings.shared.aiCommandsEnabled,
-                    LocalRewriter.isAvailable,
-                    let selection = selectionAtStart,
-                    let instruction = CommandDetector.selectionInstruction(in: cleaned) {
+            var failureNotice: String?
+            let finalText: String
+
+            switch plan {
+            case .insert(let text):
+                finalText = text
+
+            case .insertWithNotice(let text, let notice):
+                finalText = text
+                failureNotice = notice
+
+            case .snippet(let expansion):
+                finalText = expansion
+
+            case .rewrite(let kind, let subject, let fallback):
                 hud.state.phase = .polishing
-                if let transformed = await rewriter.transform(selection: selection, instruction: instruction) {
-                    cleaned = transformed
+                let command = DictationCommand(kind: kind, payload: subject, wasExplicit: true)
+                if let rewritten = await rewriter.rewrite(command) {
+                    finalText = rewritten
                 } else {
-                    // Leave the user's selection untouched rather than
-                    // overwriting it with the spoken instruction.
+                    // Never lose the words: insert them and say what happened.
+                    finalText = fallback
+                    failureNotice = "Rewrite failed — inserted as spoken"
+                }
+
+            case .template(let id, let input, let fallback):
+                guard let template = templates.first(where: { $0.id == id }) else {
+                    finalText = fallback
+                    break
+                }
+                hud.state.phase = .polishing
+                if let built = await rewriter.build(from: template, input: input) {
+                    finalText = built
+                } else {
+                    finalText = fallback
+                    failureNotice = "\(template.title) failed — inserted as spoken"
+                }
+
+            case .transformSelection(let selection, let instruction):
+                hud.state.phase = .polishing
+                guard let transformed = await rewriter.transform(
+                    selection: selection,
+                    instruction: instruction
+                ) else {
+                    // Leave the selection alone rather than overwriting it with
+                    // the instruction the user just spoke.
                     hud.state.phase = .error("Rewrite failed — selection left unchanged")
                     hideHUDAfterDelay(seconds: 3)
                     state = .idle
                     return
                 }
-            }
-            // 4. Natural-language command ("make this message better, …").
-            else if AppSettings.shared.aiCommandsEnabled,
-                    LocalRewriter.isAvailable,
-                    let command = CommandDetector.detect(in: cleaned) {
-                hud.state.phase = .polishing
-                if let rewritten = await rewriter.rewrite(command) {
-                    cleaned = rewritten
-                } else {
-                    cleaned = command.payload
-                    failureNotice = "Rewrite failed — inserted as spoken"
-                }
-            }
-            // 5. Spoken self-corrections ("…at 5, no wait, 6").
-            else if AppSettings.shared.aiCommandsEnabled,
-                    LocalRewriter.isAvailable,
-                    SelfCorrection.hasMarkers(cleaned) {
-                hud.state.phase = .polishing
-                cleaned = await rewriter.resolveCorrections(in: cleaned) ?? cleaned
-            }
+                finalText = transformed
 
-            if let failureNotice, cleaned.isEmpty {
-                hud.state.phase = .error(failureNotice)
+            case .resolveCorrections(let text):
+                hud.state.phase = .polishing
+                finalText = await rewriter.resolveCorrections(in: text) ?? text
+
+            case .abort(let notice):
+                hud.state.phase = .error(notice)
                 hideHUDAfterDelay(seconds: 3)
                 state = .idle
                 return
             }
 
-            let outcome = await injector.inject(cleaned, method: AppSettings.shared.insertionMethod)
+            let outcome = await injector.inject(finalText, method: AppSettings.shared.insertionMethod)
             if AppSettings.shared.saveHistory {
                 HistoryStore.shared.add(
-                    text: cleaned,
+                    text: finalText,
                     duration: ProcessInfo.processInfo.systemUptime - sessionStartedAt,
                     appName: targetAppName
                 )
             }
+
             // Watch for hand corrections to this text and learn the words.
-            learner.noteInsertion(of: cleaned)
+            learner.noteInsertion(of: finalText)
 
             switch outcome {
             case .insertedDirectly, .pasted, .typed:
@@ -361,7 +312,7 @@ final class DictationCoordinator {
         } catch {
             await engine.cancelSession()
             hud.state.phase = .error("Transcription failed")
-            NSLog("Waveform: finish failed: \(error)")
+            Log.app.error("finish failed: \(String(describing: error), privacy: .public)")
             hideHUDAfterDelay()
         }
         state = .idle
