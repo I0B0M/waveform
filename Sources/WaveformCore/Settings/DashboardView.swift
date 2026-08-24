@@ -6,6 +6,7 @@ public struct DashboardView: View {
     public enum Tab: String, CaseIterable, Identifiable {
         case home = "Home"
         case dictionary = "Dictionary"
+        case prompts = "Prompts"
         case snippets = "Snippets"
         case scratchpad = "Scratchpad"
         case history = "History"
@@ -16,6 +17,7 @@ public struct DashboardView: View {
             switch self {
             case .home: return "sparkles"
             case .dictionary: return "character.book.closed"
+            case .prompts: return "wand.and.stars"
             case .snippets: return "text.badge.plus"
             case .scratchpad: return "square.and.pencil"
             case .history: return "clock.arrow.circlepath"
@@ -121,6 +123,7 @@ public struct DashboardView: View {
             switch tab {
             case .home: HomeTab(history: history, demo: demo)
             case .dictionary: DictionaryTab()
+            case .prompts: PromptsTab()
             case .snippets: SnippetsTab()
             case .scratchpad: ScratchpadTab()
             case .history: HistoryTab(history: history)
@@ -250,6 +253,8 @@ private struct HomeTab: View {
 
 private struct DictionaryTab: View {
     @State private var dictionaryText: String = AppSettings.shared.dictionaryText
+    @State private var learned: [String] = AppSettings.shared.learnedTerms
+    @State private var learnEnabled: Bool = AppSettings.shared.learnFromCorrections
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -272,8 +277,162 @@ private struct DictionaryTab: View {
             Text("\(AppSettings.shared.dictionaryTerms.count) terms")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Divider().padding(.vertical, 4)
+
+            Toggle("Learn from my corrections", isOn: $learnEnabled)
+                .onChange(of: learnEnabled) { _, newValue in
+                    AppSettings.shared.learnFromCorrections = newValue
+                }
+            Text("When you fix a word Waveform typed, it gets added here and biases the recognizer next time. Only the corrected word is stored — never what you were writing.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if learned.isEmpty {
+                Text("Nothing learned yet.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(learned, id: \.self) { term in
+                            HStack(spacing: 6) {
+                                Text(term).font(.callout)
+                                Button {
+                                    learned.removeAll { $0 == term }
+                                    AppSettings.shared.learnedTerms = learned
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(.white.opacity(0.06)))
+                            .overlay(Capsule().strokeBorder(DashboardView.violet.opacity(0.35), lineWidth: 1))
+                        }
+                    }
+                }
+                .frame(height: 40)
+            }
         }
         .padding(28)
+    }
+}
+
+// MARK: - Prompts
+
+private struct PromptsTab: View {
+    @State private var templates: [PromptTemplate] = AppSettings.shared.promptTemplates
+    @State private var selection: PromptTemplate.ID?
+
+    private var selected: PromptTemplate? {
+        templates.first { $0.id == selection }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Prompt Library")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+            Text("Say “double slash” + a trigger, then ramble. Your words get poured into that shape by the on-device model and inserted — the talk-to-Claude loop without the round trip.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(templates) { template in
+                        Button {
+                            selection = template.id
+                        } label: {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("//\(template.trigger)")
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(DashboardView.cyan)
+                                Text(template.title)
+                                    .font(.callout)
+                                    .foregroundStyle(.primary.opacity(0.9))
+                            }
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9)
+                                    .fill(template.id == selection ? Color.white.opacity(0.10) : Color.white.opacity(0.04))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Button {
+                        let new = PromptTemplate(
+                            trigger: "new",
+                            title: "Untitled shape",
+                            instruction: "Turn the user's spoken description into … Reply with only the result."
+                        )
+                        templates.append(new)
+                        AppSettings.shared.promptTemplates = templates
+                        selection = new.id
+                    } label: {
+                        Label("Add shape", systemImage: "plus")
+                            .font(.callout)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                }
+                .frame(width: 210)
+
+                if let current = selected, let index = templates.firstIndex(where: { $0.id == current.id }) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            TextField("Trigger", text: Binding(
+                                get: { templates[index].trigger },
+                                set: { templates[index].trigger = $0; AppSettings.shared.promptTemplates = templates }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 120)
+                            TextField("Title", text: Binding(
+                                get: { templates[index].title },
+                                set: { templates[index].title = $0; AppSettings.shared.promptTemplates = templates }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            Spacer()
+                            Button(role: .destructive) {
+                                templates.remove(at: index)
+                                AppSettings.shared.promptTemplates = templates
+                                selection = templates.first?.id
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(DashboardView.pink.opacity(0.85))
+                        }
+
+                        Text("Instructions given to the local model")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: Binding(
+                            get: { templates[index].instruction },
+                            set: { templates[index].instruction = $0; AppSettings.shared.promptTemplates = templates }
+                        ))
+                        .font(.system(size: 13, design: .monospaced))
+                        .scrollContentBackground(.hidden)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.cyan.opacity(0.3), lineWidth: 1))
+                    }
+                } else {
+                    VStack {
+                        Spacer()
+                        Text("Pick a shape to edit it.")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .padding(28)
+        .onAppear { if selection == nil { selection = templates.first?.id } }
     }
 }
 

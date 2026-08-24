@@ -22,6 +22,7 @@ final class DictationCoordinator {
     private let injector = TextInjector()
     private let hud = HUDController()
     private let rewriter = LocalRewriter()
+    private let learner = CorrectionLearner()
 
     private var enginePrepared = false
     private var prepareFailure: String?
@@ -132,7 +133,8 @@ final class DictationCoordinator {
             // Bias recognition toward the command words too — without this the
             // recognizer hears "prompt" as "prom" and the command silently
             // looks like ordinary speech.
-            let hints = AppSettings.shared.dictionaryTerms + CommandDetector.vocabularyHints
+            // Dictionary + terms learned from corrections + the command words.
+            let hints = AppSettings.shared.recognitionHints
             try await engine.startSession(contextualStrings: hints) { update in
                 Task { @MainActor [weak self] in
                     if update.display != hudState.transcript {
@@ -217,6 +219,32 @@ final class DictationCoordinator {
             // 1. Voice snippet ("insert my calendar link").
             else if let expansion = SnippetMatcher.expansion(for: cleaned, in: AppSettings.shared.snippets) {
                 cleaned = expansion
+            }
+            // 1b. One of the user's prompt templates ("//plan …").
+            else if AppSettings.shared.aiCommandsEnabled,
+                    case let templates = AppSettings.shared.promptTemplates,
+                    let hit = CommandDetector.templateCommand(
+                        in: cleaned,
+                        triggers: templates.map(\.trigger)
+                    ),
+                    let template = templates.first(where: {
+                        $0.trigger.caseInsensitiveCompare(hit.trigger) == .orderedSame
+                    }) {
+                let input = hit.payload.isEmpty ? (selectionAtStart ?? "") : hit.payload
+                if input.isEmpty {
+                    failureNotice = "Nothing to work on — say the details after the command"
+                } else if !LocalRewriter.isAvailable {
+                    cleaned = input
+                    failureNotice = "Apple Intelligence is off — inserted as spoken"
+                } else {
+                    hud.state.phase = .polishing
+                    if let built = await rewriter.build(from: template, input: input) {
+                        cleaned = built
+                    } else {
+                        cleaned = input
+                        failureNotice = "\(template.title) failed — inserted as spoken"
+                    }
+                }
             }
             // 2. Explicit command prefix ("//prompt …", "//better …"). With no
             //    payload it targets the current selection.
@@ -315,6 +343,9 @@ final class DictationCoordinator {
                     appName: targetAppName
                 )
             }
+            // Watch for hand corrections to this text and learn the words.
+            learner.noteInsertion(of: cleaned)
+
             switch outcome {
             case .insertedDirectly, .pasted, .typed:
                 if let failureNotice {

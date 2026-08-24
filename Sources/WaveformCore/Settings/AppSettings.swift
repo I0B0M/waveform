@@ -18,6 +18,9 @@ final class AppSettings {
         static let contextAwareStyle = "contextAwareStyle"
         static let snippets = "snippets"
         static let voiceCommandsEnabled = "voiceCommandsEnabled"
+        static let learnedTerms = "learnedTerms"
+        static let learnFromCorrections = "learnFromCorrections"
+        static let promptTemplates = "promptTemplates"
     }
 
     var hotkeyPreset: HotkeyPreset {
@@ -111,6 +114,53 @@ final class AppSettings {
             return defaults.bool(forKey: Key.voiceCommandsEnabled)
         }
         set { defaults.set(newValue, forKey: Key.voiceCommandsEnabled) }
+    }
+
+    /// Watch for words you fix by hand after Waveform types them, and add
+    /// them to the dictionary so the mistake stops repeating.
+    var learnFromCorrections: Bool {
+        get {
+            if defaults.object(forKey: Key.learnFromCorrections) == nil { return true }
+            return defaults.bool(forKey: Key.learnFromCorrections)
+        }
+        set { defaults.set(newValue, forKey: Key.learnFromCorrections) }
+    }
+
+    /// Terms picked up from corrections, newest first. Kept separate from the
+    /// hand-written dictionary so they can be reviewed and cleared on their own.
+    var learnedTerms: [String] {
+        get { defaults.stringArray(forKey: Key.learnedTerms) ?? [] }
+        set { defaults.set(Array(newValue.prefix(200)), forKey: Key.learnedTerms) }
+    }
+
+    func addLearnedTerms(_ terms: [String]) {
+        var existing = learnedTerms
+        for term in terms where !existing.contains(where: { $0.caseInsensitiveCompare(term) == .orderedSame }) {
+            existing.insert(term, at: 0)
+        }
+        learnedTerms = existing
+    }
+
+    /// Everything fed to the recognizer as contextual bias.
+    var recognitionHints: [String] {
+        // Cap the list: the analyzer treats these as a bias set, and an
+        // unbounded pile of terms dilutes rather than helps.
+        Array((dictionaryTerms + learnedTerms + CommandDetector.vocabularyHints).prefix(140))
+    }
+
+    var promptTemplates: [PromptTemplate] {
+        get {
+            guard let data = defaults.data(forKey: Key.promptTemplates),
+                  let decoded = try? JSONDecoder().decode([PromptTemplate].self, from: data) else {
+                return PromptLibrary.defaults
+            }
+            return decoded
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Key.promptTemplates)
+            }
+        }
     }
 
     var removeFillers: Bool {

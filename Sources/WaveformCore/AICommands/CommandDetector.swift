@@ -88,6 +88,32 @@ enum CommandDetector {
         "slash shorter", "prompt",
     ]
 
+    /// A `//<trigger>` for one of the user's own prompt templates. Checked
+    /// before the built-in commands so a template can shadow nothing and add
+    /// anything.
+    static func templateCommand(
+        in text: String,
+        triggers: [String]
+    ) -> (trigger: String, payload: String)? {
+        let usable = triggers
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard !usable.isEmpty else { return nil }
+
+        let alternation = usable
+            .map { NSRegularExpression.escapedPattern(for: $0) }
+            .joined(separator: "|")
+        let spoken = #"(?is)(?:(?:double|two)"# + sep + #")?slash(?:"# + sep + #"slash)?"# + sep
+            + "(" + alternation + #")\b"#
+        let symbol = #"(?is)/{1,2}\s*("# + alternation + #")\b"#
+
+        for pattern in [spoken, symbol] {
+            guard let (trigger, payload) = lastMatch(of: pattern, in: text) else { continue }
+            return (trigger, payload)
+        }
+        return nil
+    }
+
     static func detect(in text: String) -> DictationCommand? {
         // 1. Explicit markers win — no payload-length floor, because an empty
         //    payload means "act on my selection".

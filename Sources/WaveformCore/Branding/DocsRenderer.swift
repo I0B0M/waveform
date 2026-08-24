@@ -49,6 +49,7 @@ public enum DocsRenderer {
         for (tab, name) in [
             (DashboardView.Tab.home, "dashboard-home"),
             (DashboardView.Tab.settings, "dashboard-settings"),
+            (DashboardView.Tab.prompts, "dashboard-prompts"),
             (DashboardView.Tab.snippets, "dashboard-snippets"),
         ] {
             jobs.append(Job(

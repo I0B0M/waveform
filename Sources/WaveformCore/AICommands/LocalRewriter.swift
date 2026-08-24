@@ -126,6 +126,40 @@ final class LocalRewriter {
         }
     }
 
+    /// Pour spoken input into one of the user's prompt templates.
+    func build(from template: PromptTemplate, input: String) async -> String? {
+        guard Self.isAvailable else {
+            NSLog("Waveform: on-device model unavailable — cannot build prompt")
+            return nil
+        }
+        do {
+            let output: String = try await withThrowingTimeout(seconds: 14) {
+                let session = LanguageModelSession(instructions: template.instruction)
+                let response = try await session.respond(to: input)
+                return response.content
+            }
+            let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let lowered = text.lowercased()
+            let preambles = ["here is", "here's", "sure,", "sure!", "certainly", "as an ai", "i can't", "i cannot"]
+            guard !preambles.contains(where: { lowered.hasPrefix($0) }) else {
+                NSLog("Waveform: template rejected — model replied with a preamble")
+                return nil
+            }
+            // A template legitimately expands a ramble a long way, but it must
+            // not collapse to a stub.
+            let ratio = Double(text.count) / Double(max(input.count, 1))
+            guard ratio >= 0.3 else {
+                NSLog("Waveform: template rejected — output collapsed (ratio %.2f)", ratio)
+                return nil
+            }
+            return text
+        } catch {
+            NSLog("Waveform: template build failed (%@)", String(describing: error))
+            return nil
+        }
+    }
+
     // MARK: - Output guards
 
     private static func validated(_ output: String, against command: DictationCommand) -> String? {

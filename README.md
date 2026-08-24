@@ -69,6 +69,8 @@ being just a menu-bar icon. Launching at login does *not* pop the window.
 Everything is local: the stats and history come from a capped file on your own
 Mac, and clearing it means clearing it.
 
+<img src="docs/images/dashboard-prompts.png" width="720" alt="Prompt library tab">
+
 <img src="docs/images/dashboard-snippets.png" width="720" alt="Voice snippets tab">
 
 <img src="docs/images/dashboard-settings.png" width="720" alt="Settings">
@@ -83,7 +85,9 @@ Mac, and clearing it means clearing it.
   - Say the command with **nothing after it** while text is selected, and it rewrites the selection in place
   - Natural phrasing ("make this message better, …") still works, but the `//command` form never misfires
   If the model is unavailable or the rewrite fails a sanity check, your words are inserted as spoken and the HUD says why — it can never silently do nothing.
-- **Personal dictionary** (Settings): one term per line — names, jargon, acronyms. Biases recognition from the next dictation.
+- **Prompt library** — say `//plan`, `//bug`, `//review`, `//ticket` (or your own trigger) and then ramble; your words are poured into that shape by the local model and inserted. Editable in the Prompts tab.
+- **Personal dictionary** — one term per line: names, jargon, acronyms. Biases recognition from the next dictation.
+- **It learns your vocabulary.** Fix a word Waveform typed — "prom" → "prompt", "nestjs" → "NestJS" — and it notices, adds the correction to the dictionary, and stops making that mistake. Only the corrected word is stored, never what you were writing. Reviewable and clearable in the Dictionary tab.
 - **Filler removal**: "um okay so basically…" → "Okay, so basically…". Toggleable.
 - All settings save automatically — there is no Save button.
 
