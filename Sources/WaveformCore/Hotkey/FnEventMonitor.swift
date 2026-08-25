@@ -85,6 +85,11 @@ final class FnEventMonitor {
 
         let time = event.timestamp
         if fnIsDown && !fnWasDown {
+            // Only the fn key itself (keyCode 63) may open a press: arrow and
+            // F-keys emit flagsChanged carrying .function WITHOUT fn being
+            // physically down (Fluor gates on the same check; Hammerspoon
+            // #3101 documents the phantom flag).
+            guard isFnKey else { return }
             fnWasDown = true
             emit(detector.process(othersActive ? .contamination : .modifierDown, at: time))
         } else if fnIsDown && othersActive {
