@@ -44,6 +44,17 @@ final class TextInjector {
         }
     }
 
+    /// What the last successful insertion put where, for undo. Never
+    /// persisted; expires quickly because the field keeps changing without us.
+    private struct LastInsertion {
+        let text: String
+        let bundleId: String?
+        let at: TimeInterval
+    }
+
+    private var lastInsertion: LastInsertion?
+    private static let undoWindow: TimeInterval = 15
+
     static func isTrusted(promptIfNeeded: Bool) -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: promptIfNeeded]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
@@ -98,7 +109,68 @@ final class TextInjector {
             }
         }
         NSLog("Waveform: injected %d chars via %@ (method: %@)", text.count, String(describing: outcome), method.rawValue)
+        lastInsertion = LastInsertion(
+            text: text,
+            bundleId: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+            at: ProcessInfo.processInfo.systemUptime
+        )
         return outcome
+    }
+
+    enum UndoResult {
+        case undone
+        case nothingToUndo      // no recent insertion (or it expired)
+        case fieldChanged       // the text is no longer sitting where we left it
+    }
+
+    /// Take back the last insertion — but never blind-fire deletions. The
+    /// undo only proceeds when the focused field is still in the app we
+    /// inserted into AND its value still ENDS WITH exactly what we inserted;
+    /// then that suffix is selected via AX and replaced with nothing. Any
+    /// doubt — different app, edited field, unreadable value — refuses,
+    /// because deleting the wrong characters is far worse than not undoing.
+    func undoLastInsertion() -> UndoResult {
+        guard let last = lastInsertion,
+              ProcessInfo.processInfo.systemUptime - last.at <= Self.undoWindow else {
+            return .nothingToUndo
+        }
+        guard Self.isTrusted(promptIfNeeded: false),
+              NSWorkspace.shared.frontmostApplication?.bundleIdentifier == last.bundleId else {
+            return .fieldChanged
+        }
+
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
+        ) == .success, let focusedRef else { return .fieldChanged }
+        let focused = focusedRef as! AXUIElement
+
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, kAXValueAttribute as CFString, &valueRef) == .success,
+              let value = valueRef as? String,
+              value.hasSuffix(last.text) else { return .fieldChanged }
+
+        // Select exactly the inserted suffix, then replace it with nothing.
+        let suffixLength = last.text.utf16.count
+        var range = CFRange(location: (value.utf16.count - suffixLength), length: suffixLength)
+        guard let rangeValue = AXValueCreate(.cfRange, &range),
+              AXUIElementSetAttributeValue(
+                focused, kAXSelectedTextRangeAttribute as CFString, rangeValue
+              ) == .success,
+              AXUIElementSetAttributeValue(
+                focused, kAXSelectedTextAttribute as CFString, "" as CFString
+              ) == .success else { return .fieldChanged }
+
+        // Verify the deletion actually happened before declaring victory.
+        var afterRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(focused, kAXValueAttribute as CFString, &afterRef) == .success,
+           let after = afterRef as? String,
+           after.hasSuffix(last.text) {
+            return .fieldChanged
+        }
+        lastInsertion = nil
+        return .undone
     }
 
     /// Screen rectangle of the caret in the focused element, in Cocoa

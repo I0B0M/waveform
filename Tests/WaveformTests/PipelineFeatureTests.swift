@@ -63,3 +63,38 @@ struct CleanStyleTests {
         #expect(cleaner.clean("ship it") == "Ship it.")
     }
 }
+
+@Suite("RecognitionHints")
+struct RecognitionHintsTests {
+    @MainActor
+    @Test("template triggers become spoken-marker hints")
+    func triggerHints() {
+        let hints = AppSettings.composeRecognitionHints(
+            commandHints: ["slash better"],
+            templateTriggers: ["jira", " ", "standup"],
+            learned: [],
+            dictionary: []
+        )
+        #expect(hints.contains("slash jira"))
+        #expect(hints.contains("double slash jira"))
+        #expect(hints.contains("slash standup"))
+        #expect(!hints.contains("slash  "))
+    }
+
+    @MainActor
+    @Test("a huge dictionary can never evict command or trigger hints")
+    func evictionOrder() {
+        let bigDictionary = (0..<300).map { "term\($0)" }
+        let hints = AppSettings.composeRecognitionHints(
+            commandHints: ["double slash prompt"],
+            templateTriggers: ["plan"],
+            learned: ["NestJS"],
+            dictionary: bigDictionary
+        )
+        #expect(hints.count == 140)
+        #expect(hints.contains("double slash prompt"))
+        #expect(hints.contains("slash plan"))
+        #expect(hints.contains("NestJS"))
+        #expect(hints.first == "double slash prompt")
+    }
+}

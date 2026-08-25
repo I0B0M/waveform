@@ -24,7 +24,8 @@ struct HUDView: View {
         case .listening: return "LISTENING"
         case .finalizing: return "FINALIZING"
         case .polishing: return "POLISHING"
-        case .noAccessibility: return "COPIED — PRESS ⌘V"
+        case .noAccessibility: return "NO ACCESS — COPIED, ⌘V"
+        case .notice(let message): return message.uppercased()
         case .error(let message): return message.uppercased()
         }
     }
@@ -35,6 +36,7 @@ struct HUDView: View {
         case .finalizing: return Self.cyan
         case .polishing: return Self.violet
         case .noAccessibility: return Color(red: 1.00, green: 0.80, blue: 0.20)
+        case .notice: return Self.cyan
         case .error: return Color(red: 1.00, green: 0.30, blue: 0.30)
         }
     }

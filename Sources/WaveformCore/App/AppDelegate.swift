@@ -166,6 +166,28 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
         menu.addItem(.separator())
 
+        let undoItem = NSMenuItem(
+            title: "Undo Last Insertion",
+            action: #selector(undoLastInsertion),
+            keyEquivalent: "z"
+        )
+        undoItem.target = self
+        menu.addItem(undoItem)
+
+        // macOS's own Globe-key action fires alongside our fn hotkey unless
+        // it's set to Do Nothing — surface the conflict with a one-click fix.
+        if preset == .fnTap, Self.globeKeyConflicts {
+            let fixItem = NSMenuItem(
+                title: "⚠️ macOS also opens emoji on fn — click to fix",
+                action: #selector(fixGlobeKey),
+                keyEquivalent: ""
+            )
+            fixItem.target = self
+            menu.addItem(fixItem)
+        }
+
+        menu.addItem(.separator())
+
         let launchItem = NSMenuItem(
             title: "Launch at Login",
             action: #selector(toggleLaunchAtLogin),
@@ -214,6 +236,34 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
 
     @objc private func toggleDictation() {
         coordinator?.toggle()
+    }
+
+    @objc private func undoLastInsertion() {
+        coordinator?.undoLastInsertion()
+    }
+
+    /// True when the system Globe-key action would fire on a bare fn press
+    /// ("Press 🌐 key to" is anything but Do Nothing — including unset, whose
+    /// default shows the emoji picker or switches input sources).
+    private static var globeKeyConflicts: Bool {
+        let value = CFPreferencesCopyAppValue(
+            "AppleFnUsageType" as CFString,
+            "com.apple.HIToolbox" as CFString
+        ) as? Int
+        return value != 0
+    }
+
+    /// Sets "Press 🌐 key to" → Do Nothing, exactly what the Settings pane's
+    /// picker writes. Runs only from the explicitly-labeled menu click.
+    @objc private func fixGlobeKey() {
+        CFPreferencesSetAppValue(
+            "AppleFnUsageType" as CFString,
+            0 as CFNumber,
+            "com.apple.HIToolbox" as CFString
+        )
+        CFPreferencesAppSynchronize("com.apple.HIToolbox" as CFString)
+        NSLog("Waveform: set AppleFnUsageType=0 (Globe key: Do Nothing)")
+        refreshMenu()
     }
 
     @objc private func openSettings() {

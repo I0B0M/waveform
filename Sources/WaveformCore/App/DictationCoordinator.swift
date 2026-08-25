@@ -400,6 +400,22 @@ final class DictationCoordinator {
         Task { await stop() }
     }
 
+    /// Menu bar: take back the last insertion, with the outcome shown on the
+    /// HUD either way — a silent undo is as untrustworthy as no undo.
+    func undoLastInsertion() {
+        guard state == .idle else { return }
+        switch injector.undoLastInsertion() {
+        case .undone:
+            hud.show()
+            hud.state.phase = .notice("Undone")
+            hideHUDAfterDelay(seconds: 1.5)
+        case .nothingToUndo:
+            showTransientError("Nothing to undo")
+        case .fieldChanged:
+            showTransientError("Can't undo — the text changed")
+        }
+    }
+
     /// ✕ on the HUD: throw the session away — nothing is inserted.
     func cancelDictation() async {
         guard state == .recording || state == .starting else { return }

@@ -8,6 +8,7 @@ final class HUDState: ObservableObject {
         case finalizing
         case polishing         // on-device AI rewrite in progress
         case noAccessibility   // text was copied; user must press ⌘V themselves
+        case notice(String)    // brief neutral confirmation (e.g. "Undone")
         case error(String)
     }
 

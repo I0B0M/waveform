@@ -143,9 +143,33 @@ final class AppSettings {
 
     /// Everything fed to the recognizer as contextual bias.
     var recognitionHints: [String] {
-        // Cap the list: the analyzer treats these as a bias set, and an
-        // unbounded pile of terms dilutes rather than helps.
-        Array((dictionaryTerms + learnedTerms + CommandDetector.vocabularyHints).prefix(140))
+        Self.composeRecognitionHints(
+            commandHints: CommandDetector.vocabularyHints,
+            templateTriggers: promptTemplates.map(\.trigger),
+            learned: learnedTerms,
+            dictionary: dictionaryTerms
+        )
+    }
+
+    /// Pure so the ordering rules are testable. Two rules matter:
+    ///   1. The user's own template triggers get spoken-marker hints — a
+    ///      trigger the recognizer can't hear is a command that silently
+    ///      never fires (the "prompt" → "prom" bug, custom edition).
+    ///   2. Command and trigger hints come FIRST: the list is capped (an
+    ///      unbounded bias set dilutes rather than helps), and a 140-term
+    ///      dictionary must never evict the handful of hints that make
+    ///      commands work at all.
+    static func composeRecognitionHints(
+        commandHints: [String],
+        templateTriggers: [String],
+        learned: [String],
+        dictionary: [String]
+    ) -> [String] {
+        let triggerHints = templateTriggers
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .flatMap { ["slash \($0)", "double slash \($0)"] }
+        return Array((commandHints + triggerHints + learned + dictionary).prefix(140))
     }
 
     var promptTemplates: [PromptTemplate] {
