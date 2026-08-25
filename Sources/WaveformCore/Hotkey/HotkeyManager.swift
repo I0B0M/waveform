@@ -63,9 +63,19 @@ public enum HotkeyPreset: String, CaseIterable, Identifiable {
     }
 }
 
+/// What a hotkey wants from the coordinator. Key combos and double-tap emit
+/// `.toggle`; the fn preset emits raw press gestures the coordinator resolves
+/// against actual session state (tap = toggle, hold ≥ threshold = push-to-talk).
+enum HotkeyGesture {
+    case toggle
+    case pressBegan
+    case pressEnded(heldFor: TimeInterval)
+    case pressCancelled
+}
+
 @MainActor
 final class HotkeyManager {
-    var onHotkey: (() -> Void)?
+    var onGesture: ((HotkeyGesture) -> Void)?
 
     // Carbon path.
     private var hotKeyRef: EventHotKeyRef?
@@ -92,15 +102,20 @@ final class HotkeyManager {
         unregister()
 
         if preset.isBareModifier {
-            // The trigger closure is @Sendable but always dispatched onto the
+            // The gesture closure is @Sendable but always dispatched onto the
             // main queue by the controller, so hopping back onto the main
             // actor here is safe.
             let controller = ModifierTapController(
                 watching: preset == .fnTap ? .maskSecondaryFn : .maskControl,
-                trigger: preset == .fnTap ? .singleTap : .doubleTap
-            ) { [weak self] in
+                trigger: preset == .fnTap ? .press : .doubleTap
+            ) { [weak self] gesture in
                 Task { @MainActor in
-                    self?.onHotkey?()
+                    switch gesture {
+                    case .toggle: self?.onGesture?(.toggle)
+                    case .pressBegan: self?.onGesture?(.pressBegan)
+                    case .pressEnded(let held): self?.onGesture?(.pressEnded(heldFor: held))
+                    case .pressCancelled: self?.onGesture?(.pressCancelled)
+                    }
                 }
             }
             try controller.start()
@@ -149,7 +164,7 @@ final class HotkeyManager {
                 guard let userData else { return noErr }
                 let manager = Unmanaged<HotkeyManager>.fromOpaque(userData).takeUnretainedValue()
                 DispatchQueue.main.async {
-                    manager.onHotkey?()
+                    manager.onGesture?(.toggle)
                 }
                 return noErr
             },

@@ -58,8 +58,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     private func registerHotkey() {
         hotkeyRetryTask?.cancel()
         hotkeyRetryTask = nil
-        hotkeyManager.onHotkey = { [weak self] in
-            self?.coordinator?.toggle()
+        hotkeyManager.onGesture = { [weak self] gesture in
+            self?.coordinator?.handleGesture(gesture)
         }
         let preset = AppSettings.shared.hotkeyPreset
         do {

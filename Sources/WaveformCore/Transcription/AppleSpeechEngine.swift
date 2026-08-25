@@ -160,7 +160,7 @@ actor AppleSpeechEngine: TranscriptionEngine {
         // the live text (finalized + volatile) rather than keep them waiting:
         // with `.fastResults` the volatile tail is near-final anyway.
         do {
-            try await withThrowingTimeout(seconds: 2) {
+            try await withThrowingTimeout(seconds: 1.2) {
                 try await analyzer.finalizeAndFinishThroughEndOfInput()
             }
         } catch is TimeoutError {

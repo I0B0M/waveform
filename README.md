@@ -50,8 +50,9 @@ one.
 The build script creates a local "Waveform Dev" signing certificate on first run (so macOS permission grants survive rebuilds — without it, every rebuild looks like a new app and permissions silently reset).
 
 First launch:
-1. Press the hotkey once (default: **tap fn 🌐** — press to talk, press again to
-   stop; other presets in Settings). If macOS also opens the emoji picker on fn,
+1. Press the hotkey once (default: **tap fn 🌐** — tap to start, tap to stop, or
+   **hold fn for 2+ seconds** to push-to-talk: release inserts immediately;
+   other presets in Settings). If macOS also opens the emoji picker on fn,
    set System Settings → Keyboard → "Press 🌐 key to" → **Do Nothing**.
 2. Grant **Microphone** when prompted.
 3. Grant **Accessibility** (System Settings opens — toggle Waveform ON). Needed to insert text into other apps and for the fn / double-tap-Control hotkeys.
@@ -79,7 +80,7 @@ Mac, and clearing it means clearing it.
 
 ## Using it
 
-- **Start/stop**: your hotkey (default **tap fn 🌐**; Settings also offers ⌘X, ⌥Space, ⌃⌥D, F19, and **double-tap Control**). Using fn as a modifier (fn+arrows, fn+delete) never triggers it. Dictation also **auto-stops** after ~2.5s of silence once you've spoken (configurable / off).
+- **Start/stop**: your hotkey (default **fn 🌐**: tap to start / tap to stop, or **hold 2+ seconds for push-to-talk** — release inserts immediately. Settings also offers ⌘X, ⌥Space, ⌃⌥D, F19, and **double-tap Control**). Using fn as a modifier (fn+arrows, fn+delete) never triggers it. Dictation also **auto-stops** after ~2.5s of silence once you've spoken (configurable / off).
 - **The ✨ button** (most reliable): while the HUD is up, press ✨ instead of ✓ — your words get organized by the on-device model, then inserted. ⌥-click it to build a prompt instead of tidying a message. No speech recognition involved, so it can't be misheard.
 - **AI commands** (on-device, free — requires Apple Intelligence enabled). Say a `//command` at the start and then ramble; the local model restructures everything after it:
   - **"double slash prompt"** — turns your ramble into a clean, organized prompt to paste into Claude/ChatGPT
@@ -178,7 +179,6 @@ Shipped and wired into the live pipeline:
 
 Not built yet, roughly in the order I'd add them:
 
-- **Hold-to-talk** — the toggle is the only mode today; hold-and-release is what makes Wispr feel effortless
 - **Undo the last insertion** — the app writes arbitrary text into other apps through three mechanisms and there's no way back but manual selection
 - **Editable per-app rules** — `AppStyle` hardcodes bundle IDs; that should be a table you control
 - **Custom hotkey recorder** — six fixed presets today; a free-form recorder

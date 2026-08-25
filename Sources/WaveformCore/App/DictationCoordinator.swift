@@ -81,6 +81,69 @@ final class DictationCoordinator {
         }
     }
 
+    // MARK: - fn press gestures
+
+    /// Holding fn past this long makes the press push-to-talk: release stops
+    /// and inserts. A quicker press is a tap: recording keeps going until the
+    /// next tap (or silence auto-stop).
+    private static let pushToTalkThreshold: TimeInterval = 2.0
+
+    /// True while the CURRENT fn press is the one that started this session.
+    private var sessionStartedByPress = false
+    /// True while the current fn press landed during an active session (a
+    /// second tap) — its release stops, regardless of how long it was held.
+    private var pressArmsStop = false
+
+    /// The fn preset reports raw presses; resolve them against real session
+    /// state here, because only the coordinator knows whether the session the
+    /// press started is still running (silence auto-stop may have ended it).
+    func handleGesture(_ gesture: HotkeyGesture) {
+        switch gesture {
+        case .toggle:
+            toggle()
+
+        case .pressBegan:
+            // Recording starts on the DOWN edge, so push-to-talk hears the
+            // first word of the hold — nothing is lost deciding tap vs hold.
+            switch state {
+            case .idle:
+                sessionStartedByPress = true
+                pressArmsStop = false
+                Task { await start() }
+            case .recording:
+                pressArmsStop = true
+            case .starting, .finishing:
+                break
+            }
+
+        case .pressEnded(let held):
+            if pressArmsStop {
+                // Second tap of a toggle: release always stops.
+                pressArmsStop = false
+                Task { await stop() }
+            } else if sessionStartedByPress {
+                sessionStartedByPress = false
+                if held >= Self.pushToTalkThreshold {
+                    // Push-to-talk: they held fn while speaking; letting go
+                    // is the whole gesture.
+                    Task { await stop() }
+                }
+                // A quick tap: leave the session running (toggle mode).
+            }
+
+        case .pressCancelled:
+            // The press turned out to be a keyboard chord (fn+arrow, fn+
+            // delete). If that chord is what started this session, the user
+            // never meant to dictate — discard it. A chord during a session
+            // someone started earlier is just typing; ignore it.
+            pressArmsStop = false
+            if sessionStartedByPress {
+                sessionStartedByPress = false
+                Task { await cancelDictation() }
+            }
+        }
+    }
+
     private func start() async {
         guard state == .idle else { return }
         state = .starting

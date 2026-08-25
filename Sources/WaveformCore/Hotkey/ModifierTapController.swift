@@ -12,14 +12,23 @@ import Foundation
 /// All detection state is confined to the tap thread; only the trigger
 /// callback hops to the main queue.
 final class ModifierTapController: @unchecked Sendable {
-    /// How the watched modifier fires: one clean tap (fn press-to-talk) or
-    /// two clean taps inside a window (double-tap Control).
+    /// How the watched modifier fires: press gestures (fn — down/up pairs the
+    /// coordinator turns into tap-toggle or hold-to-talk) or two clean taps
+    /// inside a window (double-tap Control).
     enum Trigger {
-        case singleTap
+        case press
         case doubleTap
     }
 
-    private let onTrigger: @Sendable () -> Void
+    /// What the tap thread observed, delivered on the main queue.
+    enum Gesture {
+        case toggle                       // double-tap completed
+        case pressBegan                   // fn went down alone
+        case pressEnded(heldFor: TimeInterval)
+        case pressCancelled               // the press became a keyboard chord
+    }
+
+    private let onGesture: @Sendable (Gesture) -> Void
     private let watched: CGEventFlags
     private let trigger: Trigger
 
@@ -35,11 +44,11 @@ final class ModifierTapController: @unchecked Sendable {
     init(
         watching watched: CGEventFlags = .maskControl,
         trigger: Trigger = .doubleTap,
-        onTrigger: @escaping @Sendable () -> Void
+        onGesture: @escaping @Sendable (Gesture) -> Void
     ) {
         self.watched = watched
         self.trigger = trigger
-        self.onTrigger = onTrigger
+        self.onGesture = onGesture
     }
 
     /// Creates the tap on the dedicated thread. Throws (synchronously) when
@@ -91,19 +100,24 @@ final class ModifierTapController: @unchecked Sendable {
     }
 
     /// One entry point for both detectors, so `handle` stays agnostic of
-    /// which trigger style is active.
-    private func process(_ input: DoubleTapDetector.Input, at time: TimeInterval) -> Bool {
+    /// which trigger style is active. Returns the gesture to deliver, if any.
+    private func process(_ input: DoubleTapDetector.Input, at time: TimeInterval) -> Gesture? {
         switch trigger {
         case .doubleTap:
-            return doubleTapDetector.process(input, at: time)
-        case .singleTap:
+            return doubleTapDetector.process(input, at: time) ? .toggle : nil
+        case .press:
             let mapped: SingleTapDetector.Input
             switch input {
             case .modifierDown: mapped = .modifierDown
             case .modifierUp: mapped = .modifierUp
             case .contamination: mapped = .contamination
             }
-            return singleTapDetector.process(mapped)
+            switch singleTapDetector.process(mapped, at: time) {
+            case .none: return nil
+            case .pressBegan: return .pressBegan
+            case .pressEnded(let held): return .pressEnded(heldFor: held)
+            case .pressCancelled: return .pressCancelled
+            }
         }
     }
 
@@ -161,27 +175,30 @@ final class ModifierTapController: @unchecked Sendable {
             let watchedIsDown = active.contains(watched)
             let watchedIsAlone = active == watched
 
-            var triggered = false
+            var gesture: Gesture?
             if watchedIsDown && !watchedWasDown {
                 watchedWasDown = true
-                triggered = process(watchedIsAlone ? .modifierDown : .contamination, at: timestamp)
+                gesture = process(watchedIsAlone ? .modifierDown : .contamination, at: timestamp)
             } else if watchedIsDown && watchedWasDown && !watchedIsAlone {
-                triggered = process(.contamination, at: timestamp)
+                gesture = process(.contamination, at: timestamp)
             } else if !watchedIsDown && watchedWasDown {
                 watchedWasDown = false
-                triggered = process(.modifierUp, at: timestamp)
+                gesture = process(.modifierUp, at: timestamp)
             } else if !watchedIsDown && !active.isEmpty {
-                triggered = process(.contamination, at: timestamp)
+                gesture = process(.contamination, at: timestamp)
             }
 
-            if triggered {
-                let onTrigger = onTrigger
-                DispatchQueue.main.async { onTrigger() }
+            if let gesture {
+                let onGesture = onGesture
+                DispatchQueue.main.async { onGesture(gesture) }
             }
 
         default:
             let timestamp = Double(event.timestamp) / 1_000_000_000
-            _ = process(.contamination, at: timestamp)
+            if let gesture = process(.contamination, at: timestamp) {
+                let onGesture = onGesture
+                DispatchQueue.main.async { onGesture(gesture) }
+            }
         }
     }
 }
