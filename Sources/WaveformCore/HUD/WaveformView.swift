@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Music-visualizer waveform: two ribbons in the app's accent family
+/// Music-visualizer waveform: two crisp ribbons in the app's accent family
 /// (violet and cyan) weaving across a dark void, amplitude driven by the
-/// live microphone level. Two hues that sit next to each other read as one
-/// glowing voice; a third contrasting hue read as noise.
+/// live microphone level. No glow layers and no additive blending — each
+/// ribbon is a single clean stroke whose ends fade out, so the line never
+/// hard-clips at the pill's edge.
 ///
 /// Rendering notes for efficiency: one Canvas, three strokes per ribbon
 /// (halo, glow, core), no offscreen effects, and the TimelineView pauses
@@ -51,8 +52,6 @@ struct WaveformView: View {
         let midY = size.height / 2
         let maxAmplitude = size.height * 0.42
 
-        graphics.blendMode = .plusLighter
-
         for ribbon in Self.ribbons {
             let path = ribbonPath(
                 ribbon: ribbon,
@@ -63,21 +62,23 @@ struct WaveformView: View {
                 time: time
             )
 
-            // Halo → glow → hot core, additively blended.
+            // One clean stroke per ribbon. The gradient fades the ends to
+            // transparent so the line dissolves instead of stopping dead at
+            // the canvas edge.
+            let faded = ribbon.color.mix(with: .white, by: 0.25)
             graphics.stroke(
                 path,
-                with: .color(ribbon.color.opacity(0.12)),
-                style: StrokeStyle(lineWidth: ribbon.thickness * 4, lineCap: .round, lineJoin: .round)
-            )
-            graphics.stroke(
-                path,
-                with: .color(ribbon.color.opacity(0.45)),
-                style: StrokeStyle(lineWidth: ribbon.thickness * 2, lineCap: .round, lineJoin: .round)
-            )
-            graphics.stroke(
-                path,
-                with: .color(ribbon.color.mix(with: .white, by: 0.65).opacity(0.95)),
-                style: StrokeStyle(lineWidth: ribbon.thickness * 0.9, lineCap: .round, lineJoin: .round)
+                with: .linearGradient(
+                    Gradient(stops: [
+                        .init(color: faded.opacity(0), location: 0),
+                        .init(color: faded.opacity(0.9), location: 0.12),
+                        .init(color: faded.opacity(0.9), location: 0.88),
+                        .init(color: faded.opacity(0), location: 1),
+                    ]),
+                    startPoint: CGPoint(x: 0, y: midY),
+                    endPoint: CGPoint(x: size.width, y: midY)
+                ),
+                style: StrokeStyle(lineWidth: ribbon.thickness, lineCap: .round, lineJoin: .round)
             )
         }
     }
