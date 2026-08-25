@@ -285,7 +285,11 @@ final class DictationCoordinator {
                 return
             }
 
-            let outcome = await injector.inject(finalText, method: AppSettings.shared.insertionMethod)
+            let outcome = await injector.inject(
+                finalText,
+                method: AppSettings.shared.insertionMethod,
+                targetBundleId: targetBundleId
+            )
             if AppSettings.shared.saveHistory {
                 HistoryStore.shared.add(
                     text: finalText,

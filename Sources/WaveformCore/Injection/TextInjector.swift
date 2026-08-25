@@ -49,13 +49,28 @@ final class TextInjector {
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
 
-    func inject(_ text: String, method: Method = .auto) async -> Outcome {
+    /// `targetBundleId` is the app that was frontmost when dictation STARTED —
+    /// the one whose cursor the user was speaking at. If something else has
+    /// grabbed focus since (an alert, a stray click, a notification), the text
+    /// would land in the wrong window or nowhere; re-front the target first,
+    /// and if that fails leave the text on the clipboard rather than type it
+    /// into the wrong app.
+    func inject(_ text: String, method: Method = .auto, targetBundleId: String? = nil) async -> Outcome {
         guard !text.isEmpty else { return .insertedDirectly }
 
         guard Self.isTrusted(promptIfNeeded: false) else {
             NSLog("Waveform: injection BLOCKED — Accessibility not granted; text left on clipboard")
             putOnPasteboard(text, transient: false)
             return .copiedOnly
+        }
+
+        if let targetBundleId,
+           NSWorkspace.shared.frontmostApplication?.bundleIdentifier != targetBundleId {
+            guard await refront(bundleId: targetBundleId) else {
+                NSLog("Waveform: target app %@ lost focus and would not re-front — text left on clipboard", targetBundleId)
+                putOnPasteboard(text, transient: false)
+                return .copiedOnly
+            }
         }
 
         // Auto prefers unicode typing over ⌘V as the fallback: macOS 26.5's
@@ -84,6 +99,23 @@ final class TextInjector {
         }
         NSLog("Waveform: injected %d chars via %@ (method: %@)", text.count, String(describing: outcome), method.rawValue)
         return outcome
+    }
+
+    /// Bring the dictation target back to the front and wait for the switch
+    /// to land, plus a beat for the app to restore its first responder (the
+    /// field the caret was in). Returns false if it never becomes frontmost.
+    private func refront(bundleId: String) async -> Bool {
+        guard let app = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleId).first else { return false }
+        app.activate()
+        for _ in 0..<10 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleId {
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                return true
+            }
+        }
+        return false
     }
 
     /// The selected text in the focused element of the frontmost app, when

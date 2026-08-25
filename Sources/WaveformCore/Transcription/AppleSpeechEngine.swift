@@ -122,12 +122,15 @@ actor AppleSpeechEngine: TranscriptionEngine {
                     if result.isFinal {
                         finalized = Self.append(text, to: finalized)
                         volatileTail = ""
-                        // Keep the salvage copy current, so a finalization that
-                        // never returns doesn't take the whole dictation with it.
-                        salvage.value = finalized
                     } else {
                         volatileTail = text
                     }
+                    // Keep the salvage copy current — finalized prefix PLUS the
+                    // volatile tail. This is the same text the HUD is showing,
+                    // so a slow finalization can hand it back instead of making
+                    // the user wait for the analyzer to re-settle words they
+                    // can already read.
+                    salvage.value = Self.append(volatileTail, to: finalized)
                     onUpdate(TranscriptionUpdate(finalized: finalized, volatile: volatileTail))
                 }
             } catch is CancellationError {
@@ -150,11 +153,14 @@ actor AppleSpeechEngine: TranscriptionEngine {
         inputContinuation.value?.finish()
         inputContinuation.value = nil
 
-        // A hung finalization must not wedge the app; 10s is generous for
-        // flushing a few seconds of tail audio. If it does hang, keep the words
-        // already finalized instead of throwing a whole dictation away.
+        // Finalization usually returns in well under a second, but under load
+        // it can take several — and the user is standing at their cursor
+        // waiting for text they can already read on the HUD. So give the
+        // analyzer a short grace to settle the tail properly, then hand back
+        // the live text (finalized + volatile) rather than keep them waiting:
+        // with `.fastResults` the volatile tail is near-final anyway.
         do {
-            try await withThrowingTimeout(seconds: 10) {
+            try await withThrowingTimeout(seconds: 2) {
                 try await analyzer.finalizeAndFinishThroughEndOfInput()
             }
         } catch is TimeoutError {
@@ -163,7 +169,7 @@ actor AppleSpeechEngine: TranscriptionEngine {
             await analyzer.cancelAndFinishNow()
             clearSession()
             guard !salvaged.isEmpty else { throw TimeoutError() }
-            Log.app.notice("finalization timed out; salvaged \(salvaged.count, privacy: .public) characters")
+            Log.app.notice("finalization slow; inserted live text (\(salvaged.count, privacy: .public) chars)")
             return salvaged
         }
 
