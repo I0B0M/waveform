@@ -101,6 +101,46 @@ final class TextInjector {
         return outcome
     }
 
+    /// Screen rectangle of the caret in the focused element, in Cocoa
+    /// (bottom-left-origin) coordinates — for the caret-side recording dot.
+    /// nil whenever the focused app doesn't expose it; callers must not guess.
+    func caretScreenRect() -> CGRect? {
+        guard Self.isTrusted(promptIfNeeded: false) else { return nil }
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedRef
+        ) == .success, let focusedRef else { return nil }
+        let focused = focusedRef as! AXUIElement
+
+        var rangeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            focused,
+            kAXSelectedTextRangeAttribute as CFString,
+            &rangeRef
+        ) == .success, let rangeRef, CFGetTypeID(rangeRef) == AXValueGetTypeID() else { return nil }
+
+        var boundsRef: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            focused,
+            kAXBoundsForRangeParameterizedAttribute as CFString,
+            rangeRef,
+            &boundsRef
+        ) == .success, let boundsRef, CFGetTypeID(boundsRef) == AXValueGetTypeID() else { return nil }
+
+        var rect = CGRect.zero
+        guard AXValueGetValue(boundsRef as! AXValue, .cgRect, &rect),
+              rect.height > 0, rect.height < 200 else { return nil }
+
+        // AX reports top-left-origin global coordinates; Cocoa wants
+        // bottom-left, flipped against the primary screen.
+        guard let primary = NSScreen.screens.first else { return nil }
+        let flippedY = primary.frame.height - rect.origin.y - rect.height
+        return CGRect(x: rect.origin.x, y: flippedY, width: rect.width, height: rect.height)
+    }
+
     /// Bring the dictation target back to the front and wait for the switch
     /// to land, plus a beat for the app to restore its first responder (the
     /// field the caret was in). Returns false if it never becomes frontmost.

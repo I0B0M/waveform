@@ -70,21 +70,25 @@ struct HUDView: View {
                 WaveformView(
                     level: state.level,
                     animating: state.phase != .noAccessibility,
+                    recognitionAt: state.lastRecognitionAt,
+                    processing: state.phase == .finalizing || state.phase == .polishing,
+                    processingAt: state.phaseChangedAt,
                     frozenTime: frozenTime
                 )
-                .frame(height: expanded ? 38 : 30)
+                .frame(height: expanded ? 34 : 30)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    liveText
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    transcriptStrip
                     Text(statusText)
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                         .tracking(2.5)
                         .foregroundStyle(statusColor.opacity(0.95))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(height: expanded ? 46 : 0)
+                .frame(height: expanded ? 56 : 0)
                 .opacity(expanded ? 1 : 0)
+                // The shell morphs first; the content follows 90ms behind.
+                .animation(.easeOut(duration: 0.22).delay(expanded ? 0.09 : 0), value: expanded)
                 .clipped()
             }
 
@@ -105,27 +109,51 @@ struct HUDView: View {
                 .help("Insert exactly as spoken")
         }
         .padding(.horizontal, expanded ? 14 : 17)
-        .padding(.vertical, expanded ? 11 : 9)
-        .frame(width: expanded ? 520 : 196)
+        .padding(.vertical, expanded ? 10 : 9)
+        .frame(width: expanded ? 340 : 190)
         .background(pillBackground)
         .overlay(pillRim)
         .shadow(color: Self.violet.opacity(0.30), radius: expanded ? 22 : 16, y: 5)
-        .animation(.spring(response: 0.40, dampingFraction: 0.84), value: expanded)
+        // Bounce on arrival, none on exit: expanding overshoots a touch,
+        // collapsing is overdamped so the pill leaves without wobbling.
+        .animation(
+            expanded
+                ? .spring(response: 0.40, dampingFraction: 0.80)
+                : .spring(response: 0.45, dampingFraction: 1.0),
+            value: expanded
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
-    /// Settled words bright, still-changing tail dimmed — you can watch the
-    /// recognizer commit as you speak.
-    private var liveText: some View {
-        (
-            Text(state.finalizedText)
-                .foregroundColor(.white.opacity(0.92))
-            + Text(state.finalizedText.isEmpty ? state.volatileText : " " + state.volatileText)
-                .foregroundColor(.white.opacity(0.45))
+    /// The jump-free transcript strip: fixed height, bottom-pinned, old lines
+    /// sliding up into a top fade. Word positions are never animated — only
+    /// opacity, so settled words "dry" from dim to bright without the text
+    /// ever reflowing under the reader's eyes.
+    private var transcriptStrip: some View {
+        FlowLayout(spacing: 3.5, lineSpacing: 2) {
+            ForEach(state.words) { word in
+                Text(word.text)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white)
+                    .opacity(word.settled ? 0.92 : 0.5)
+                    .animation(
+                        .easeOut(duration: 0.15)
+                            .delay(Double(word.settleBatchIndex) * 0.04),
+                        value: word.settled
+                    )
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40, alignment: .bottomLeading)
+        .clipped()
+        .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: 0.34),
+                    ],
+                    startPoint: .top, endPoint: .bottom
+            )
         )
-        .font(.system(size: 12.5, weight: .medium, design: .rounded))
-        .lineLimit(2)
-        .truncationMode(.head)
     }
 
     private var pillBackground: some View {

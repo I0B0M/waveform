@@ -109,8 +109,9 @@ public enum DocsRenderer {
         let state = HUDState()
         state.level = 0.72
         if transcript {
-            state.finalizedText = "Okay, so basically I wanted to explain that we should"
-            state.volatileText = "move the launch to next week"
+            state.applyTranscript(
+                finalized: "Okay, so basically I wanted to explain that we should",
+                volatile: "move the launch to next week")
         }
         return ZStack {
             LinearGradient(

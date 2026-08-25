@@ -23,6 +23,7 @@ final class DictationCoordinator {
     private let hud = HUDController()
     private let rewriter = LocalRewriter()
     private let learner = CorrectionLearner()
+    private let caretDot = CaretDotController()
 
     private var enginePrepared = false
     private var prepareFailure: String?
@@ -201,11 +202,15 @@ final class DictationCoordinator {
             try await engine.startSession(contextualStrings: hints) { update in
                 Task { @MainActor [weak self] in
                     if update.display != hudState.transcript {
-                        hudState.finalizedText = update.finalized
-                        hudState.volatileText = update.volatile
+                        hudState.applyTranscript(
+                            finalized: update.finalized,
+                            volatile: update.volatile
+                        )
                         // The recognizer producing new text is the strongest
-                        // "still speaking" signal there is.
+                        // "still speaking" signal there is — and it drives
+                        // the cyan "understanding" ribbon.
                         if let self, !update.display.isEmpty {
+                            hudState.noteRecognition()
                             self.sawSpeech = true
                             self.lastVoiceActivityAt = ProcessInfo.processInfo.systemUptime
                         }
@@ -235,6 +240,7 @@ final class DictationCoordinator {
             }
             try audio.start(targetFormat: format)
             state = .recording
+            caretDot.show { [injector] in injector.caretScreenRect() }
             startSilenceWatchdog()
         } catch {
             audio.stop()
@@ -248,6 +254,7 @@ final class DictationCoordinator {
     private func stop() async {
         guard state == .recording else { return }
         state = .finishing
+        caretDot.hide()
         stopSilenceWatchdog()
         hud.state.phase = .finalizing
         audio.stop()
@@ -398,6 +405,7 @@ final class DictationCoordinator {
         guard state == .recording || state == .starting else { return }
         state = .finishing
         forcedCommand = nil
+        caretDot.hide()
         stopSilenceWatchdog()
         audio.stop()
         await engine.cancelSession()
