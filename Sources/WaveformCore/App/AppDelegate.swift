@@ -185,7 +185,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // Input Monitoring gates the fn/double-tap event tap. Known macOS
         // trap: the grant can go stale after the binary is replaced while
         // still SHOWING as enabled — the fix is toggling it off and on.
-        if preset.isBareModifier {
+        if preset == .controlDoubleTap {
             let imOK = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
             let imItem = NSMenuItem(
                 title: imOK

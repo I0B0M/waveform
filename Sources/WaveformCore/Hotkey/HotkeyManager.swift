@@ -84,11 +84,14 @@ final class HotkeyManager {
 
     // Event-tap path (runs on its own thread — see ModifierTapController).
     private var tapController: ModifierTapController?
+    // NSEvent path for fn (see FnEventMonitor for why fn can't use the tap).
+    private var fnMonitor: FnEventMonitor?
 
-    /// True when a bare-modifier preset is selected but its tap isn't running
-    /// (permission missing) — the condition the retry loop watches.
+    /// True when a bare-modifier preset is selected but its watcher isn't
+    /// running (permission missing) — the condition the retry loop watches.
     var tapControllerMissing: Bool {
-        AppSettings.shared.hotkeyPreset.isBareModifier && tapController == nil
+        AppSettings.shared.hotkeyPreset.isBareModifier
+            && tapController == nil && fnMonitor == nil
     }
 
     enum HotkeyError: Error, LocalizedError {
@@ -110,13 +113,27 @@ final class HotkeyManager {
     func register(preset: HotkeyPreset) throws {
         unregister()
 
+        if preset == .fnTap {
+            // fn does NOT use the event tap: on current macOS a healthy
+            // session tap with Input Monitoring granted can receive zero fn
+            // flagsChanged events (verified with raw logging). NSEvent global
+            // monitors are the delivery path that actually works, and they
+            // ride the Accessibility grant the app already needs to insert
+            // text — one permission, not two.
+            let monitor = FnEventMonitor { [weak self] gesture in
+                self?.onGesture?(gesture)
+            }
+            try monitor.start()
+            fnMonitor = monitor
+            Log.hotkey.notice("fn hotkey via NSEvent monitors")
+            return
+        }
+
         if preset.isBareModifier {
-            // Creating the tap can SUCCEED without Input Monitoring (the mask
-            // includes permission-free mouse events) while macOS silently
-            // withholds every keyboard event — a hotkey that looks registered
-            // and never fires. Ask for the grant explicitly, up front: this
-            // is also what puts Waveform's row into the Input Monitoring list
-            // at all after a TCC reset.
+            // Double-tap Control still uses the tap (Control delivers fine
+            // there). Creating the tap can SUCCEED without Input Monitoring
+            // (the mask includes permission-free mouse events) while macOS
+            // withholds keyboard events — ask for the grant explicitly.
             let listenAccess = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
             if listenAccess != kIOHIDAccessTypeGranted {
                 Log.hotkey.notice("Input Monitoring not granted (\(listenAccess.rawValue, privacy: .public)) — requesting")
@@ -127,8 +144,8 @@ final class HotkeyManager {
             // main queue by the controller, so hopping back onto the main
             // actor here is safe.
             let controller = ModifierTapController(
-                watching: preset == .fnTap ? .maskSecondaryFn : .maskControl,
-                trigger: preset == .fnTap ? .press : .doubleTap
+                watching: .maskControl,
+                trigger: .doubleTap
             ) { [weak self] gesture in
                 // Already on the main queue (the controller dispatches there);
                 // deliver synchronously — a Task per gesture has no FIFO
@@ -145,8 +162,6 @@ final class HotkeyManager {
             }
             try controller.start()
             tapController = controller
-            // Tap creation ≠ keyboard delivery: log the grant state so a
-            // "running" tap that receives nothing is self-diagnosing.
             let granted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
             Log.hotkey.notice("event tap running for preset \(preset.rawValue, privacy: .public) (input monitoring granted: \(granted, privacy: .public))")
             return
@@ -176,6 +191,8 @@ final class HotkeyManager {
         }
         tapController?.stop()
         tapController = nil
+        fnMonitor?.stop()
+        fnMonitor = nil
     }
 
     // MARK: - Carbon path

@@ -189,6 +189,13 @@ final class ModifierTapController: @unchecked Sendable {
                 .maskControl, .maskShift, .maskCommand, .maskAlternate, .maskSecondaryFn,
             ]
             let active = event.flags.intersection(relevant)
+            // Raw visibility for the fn key specifically: when the hotkey
+            // "does nothing", this line is the ground truth of what macOS
+            // actually delivered (or didn't).
+            let keycode = event.getIntegerValueField(.keyboardEventKeycode)
+            if keycode == 63 || event.flags.contains(.maskSecondaryFn) || watchedWasDown {
+                Log.hotkey.notice("raw flagsChanged: keycode=\(keycode, privacy: .public) flags=0x\(String(event.flags.rawValue, radix: 16), privacy: .public)")
+            }
             let watchedIsDown = active.contains(watched)
             let watchedIsAlone = active == watched
 
@@ -212,6 +219,11 @@ final class ModifierTapController: @unchecked Sendable {
             }
 
         default:
+            if type == .keyDown, event.getIntegerValueField(.keyboardEventKeycode) == 63 {
+                // Some configurations deliver fn as a KEY, not a modifier —
+                // if this line ever fires, that's why the hotkey looks dead.
+                Log.hotkey.notice("fn arrived as keyDown, not flagsChanged")
+            }
             let timestamp = Double(event.timestamp) / 1_000_000_000
             if let gesture = process(.contamination, at: timestamp) {
                 let onGesture = onGesture
