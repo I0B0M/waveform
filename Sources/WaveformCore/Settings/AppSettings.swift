@@ -26,7 +26,7 @@ final class AppSettings {
     var hotkeyPreset: HotkeyPreset {
         get {
             guard let raw = defaults.string(forKey: Key.hotkeyPreset),
-                  let preset = HotkeyPreset(rawValue: raw) else { return .commandX }
+                  let preset = HotkeyPreset(rawValue: raw) else { return .fnTap }
             return preset
         }
         set { defaults.set(newValue.rawValue, forKey: Key.hotkeyPreset) }

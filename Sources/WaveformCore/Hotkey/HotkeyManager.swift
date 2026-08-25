@@ -16,6 +16,7 @@ import AppKit
 ///    the app tell the user exactly what's missing and retry after the grant.
 ///    Not consuming is fine here: a lone Control press means nothing to apps.
 public enum HotkeyPreset: String, CaseIterable, Identifiable {
+    case fnTap
     case commandX
     case optionSpace
     case controlOptionD
@@ -26,6 +27,7 @@ public enum HotkeyPreset: String, CaseIterable, Identifiable {
 
     public var label: String {
         switch self {
+        case .fnTap: return "fn 🌐 (Globe) — press to talk"
         case .commandX: return "⌘X (replaces Cut!)"
         case .optionSpace: return "⌥Space"
         case .controlOptionD: return "⌃⌥D"
@@ -38,7 +40,7 @@ public enum HotkeyPreset: String, CaseIterable, Identifiable {
     /// hotkey; that needs the Accessibility permission (the same one used for
     /// inserting text).
     public var isBareModifier: Bool {
-        self == .controlDoubleTap
+        self == .controlDoubleTap || self == .fnTap
     }
 
     var keyCode: UInt32 {
@@ -47,7 +49,7 @@ public enum HotkeyPreset: String, CaseIterable, Identifiable {
         case .optionSpace: return UInt32(kVK_Space)
         case .controlOptionD: return UInt32(kVK_ANSI_D)
         case .f19: return UInt32(kVK_F19)
-        case .controlDoubleTap: return 0
+        case .controlDoubleTap, .fnTap: return 0
         }
     }
 
@@ -56,7 +58,7 @@ public enum HotkeyPreset: String, CaseIterable, Identifiable {
         case .commandX: return UInt32(cmdKey)
         case .optionSpace: return UInt32(optionKey)
         case .controlOptionD: return UInt32(controlKey | optionKey)
-        case .f19, .controlDoubleTap: return 0
+        case .f19, .controlDoubleTap, .fnTap: return 0
         }
     }
 }
@@ -93,7 +95,10 @@ final class HotkeyManager {
             // The trigger closure is @Sendable but always dispatched onto the
             // main queue by the controller, so hopping back onto the main
             // actor here is safe.
-            let controller = ModifierTapController { [weak self] in
+            let controller = ModifierTapController(
+                watching: preset == .fnTap ? .maskSecondaryFn : .maskControl,
+                trigger: preset == .fnTap ? .singleTap : .doubleTap
+            ) { [weak self] in
                 Task { @MainActor in
                     self?.onHotkey?()
                 }

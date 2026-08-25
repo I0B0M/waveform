@@ -12,17 +12,33 @@ import Foundation
 /// All detection state is confined to the tap thread; only the trigger
 /// callback hops to the main queue.
 final class ModifierTapController: @unchecked Sendable {
+    /// How the watched modifier fires: one clean tap (fn press-to-talk) or
+    /// two clean taps inside a window (double-tap Control).
+    enum Trigger {
+        case singleTap
+        case doubleTap
+    }
+
     private let onTrigger: @Sendable () -> Void
+    private let watched: CGEventFlags
+    private let trigger: Trigger
 
     private var thread: Thread?
     private var threadRunLoop: CFRunLoop?
     private var tap: CFMachPort?
 
     // Tap-thread-only state.
-    private var detector = DoubleTapDetector(window: 0.6)
-    private var controlWasDown = false
+    private var doubleTapDetector = DoubleTapDetector(window: 0.6)
+    private var singleTapDetector = SingleTapDetector()
+    private var watchedWasDown = false
 
-    init(onTrigger: @escaping @Sendable () -> Void) {
+    init(
+        watching watched: CGEventFlags = .maskControl,
+        trigger: Trigger = .doubleTap,
+        onTrigger: @escaping @Sendable () -> Void
+    ) {
+        self.watched = watched
+        self.trigger = trigger
         self.onTrigger = onTrigger
     }
 
@@ -69,8 +85,26 @@ final class ModifierTapController: @unchecked Sendable {
         tap = nil
         threadRunLoop = nil
         thread = nil
-        detector = DoubleTapDetector(window: 0.6)
-        controlWasDown = false
+        doubleTapDetector = DoubleTapDetector(window: 0.6)
+        singleTapDetector = SingleTapDetector()
+        watchedWasDown = false
+    }
+
+    /// One entry point for both detectors, so `handle` stays agnostic of
+    /// which trigger style is active.
+    private func process(_ input: DoubleTapDetector.Input, at time: TimeInterval) -> Bool {
+        switch trigger {
+        case .doubleTap:
+            return doubleTapDetector.process(input, at: time)
+        case .singleTap:
+            let mapped: SingleTapDetector.Input
+            switch input {
+            case .modifierDown: mapped = .modifierDown
+            case .modifierUp: mapped = .modifierUp
+            case .contamination: mapped = .contamination
+            }
+            return singleTapDetector.process(mapped)
+        }
     }
 
     // MARK: - Tap thread
@@ -124,20 +158,20 @@ final class ModifierTapController: @unchecked Sendable {
                 .maskControl, .maskShift, .maskCommand, .maskAlternate, .maskSecondaryFn,
             ]
             let active = event.flags.intersection(relevant)
-            let controlIsDown = active.contains(.maskControl)
-            let controlIsAlone = active == .maskControl
+            let watchedIsDown = active.contains(watched)
+            let watchedIsAlone = active == watched
 
             var triggered = false
-            if controlIsDown && !controlWasDown {
-                controlWasDown = true
-                triggered = detector.process(controlIsAlone ? .modifierDown : .contamination, at: timestamp)
-            } else if controlIsDown && controlWasDown && !controlIsAlone {
-                triggered = detector.process(.contamination, at: timestamp)
-            } else if !controlIsDown && controlWasDown {
-                controlWasDown = false
-                triggered = detector.process(.modifierUp, at: timestamp)
-            } else if !controlIsDown && !active.isEmpty {
-                triggered = detector.process(.contamination, at: timestamp)
+            if watchedIsDown && !watchedWasDown {
+                watchedWasDown = true
+                triggered = process(watchedIsAlone ? .modifierDown : .contamination, at: timestamp)
+            } else if watchedIsDown && watchedWasDown && !watchedIsAlone {
+                triggered = process(.contamination, at: timestamp)
+            } else if !watchedIsDown && watchedWasDown {
+                watchedWasDown = false
+                triggered = process(.modifierUp, at: timestamp)
+            } else if !watchedIsDown && !active.isEmpty {
+                triggered = process(.contamination, at: timestamp)
             }
 
             if triggered {
@@ -147,7 +181,7 @@ final class ModifierTapController: @unchecked Sendable {
 
         default:
             let timestamp = Double(event.timestamp) / 1_000_000_000
-            _ = detector.process(.contamination, at: timestamp)
+            _ = process(.contamination, at: timestamp)
         }
     }
 }

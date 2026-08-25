@@ -35,6 +35,11 @@ struct SettingsView: View {
                     onHotkeyChange()
                 }
 
+                if hotkeyPreset == .fnTap {
+                    Text("Tap fn (🌐) once to start, once more to stop. Using fn as a modifier (fn+arrows, fn+delete) never triggers it. If macOS also opens the emoji picker or switches input on fn, set System Settings → Keyboard → “Press 🌐 key to” → Do Nothing. Needs the Accessibility permission.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if hotkeyPreset == .commandX {
                     Text("Heads-up: while Waveform is running, ⌘X starts/stops dictation everywhere — it no longer performs Cut.")
                         .font(.caption)
