@@ -22,6 +22,8 @@ final class TextInjector {
         case pasted                 // ⌘V path, clipboard restored after
         case typed                  // per-character synthesis, clipboard untouched
         case copiedOnly             // no permission — text left on clipboard
+        case copiedFocusLost        // target app wouldn't come back — copied
+        case copiedSecureInput      // secure input field — typing is discarded
     }
 
     /// How the text reaches the focused app once Accessibility is granted.
@@ -70,7 +72,7 @@ final class TextInjector {
         guard !text.isEmpty else { return .insertedDirectly }
 
         guard Self.isTrusted(promptIfNeeded: false) else {
-            NSLog("Waveform: injection BLOCKED — Accessibility not granted; text left on clipboard")
+            Log.injection.error("BLOCKED — Accessibility not granted; text left on clipboard")
             putOnPasteboard(text, transient: false)
             return .copiedOnly
         }
@@ -78,10 +80,20 @@ final class TextInjector {
         if let targetBundleId,
            NSWorkspace.shared.frontmostApplication?.bundleIdentifier != targetBundleId {
             guard await refront(bundleId: targetBundleId) else {
-                NSLog("Waveform: target app %@ lost focus and would not re-front — text left on clipboard", targetBundleId)
+                // NOT a permissions problem — say so, or the user concludes
+                // their Accessibility grant "didn't work".
+                Log.injection.error("target \(targetBundleId, privacy: .public) would not re-front — text left on clipboard")
                 putOnPasteboard(text, transient: false)
-                return .copiedOnly
+                return .copiedFocusLost
             }
+        }
+
+        // Synthesized events are silently discarded while a secure input
+        // field (password box) holds the keyboard — never fake success there.
+        if method != .pasteOnly, IsSecureEventInputEnabled() {
+            Log.injection.error("secure event input active — text left on clipboard")
+            putOnPasteboard(text, transient: false)
+            return .copiedSecureInput
         }
 
         // Auto prefers unicode typing over ⌘V as the fallback: macOS 26.5's
@@ -90,25 +102,20 @@ final class TextInjector {
         // pass. Paste remains available as an explicit setting.
         let outcome: Outcome
         switch method {
-        case .auto:
+        case .auto, .typeDirectly:
             if injectViaAccessibility(text) {
                 outcome = .insertedDirectly
-            } else {
-                injectViaTyping(text)
+            } else if injectViaTyping(text) {
                 outcome = .typed
+            } else {
+                putOnPasteboard(text, transient: false)
+                outcome = .copiedOnly
             }
         case .pasteOnly:
             await injectViaPasteboard(text)
             outcome = .pasted
-        case .typeDirectly:
-            if injectViaAccessibility(text) {
-                outcome = .insertedDirectly
-            } else {
-                injectViaTyping(text)
-                outcome = .typed
-            }
         }
-        NSLog("Waveform: injected %d chars via %@ (method: %@)", text.count, String(describing: outcome), method.rawValue)
+        Log.injection.notice("injected \(text.count, privacy: .public) chars via \(String(describing: outcome), privacy: .public) (method: \(method.rawValue, privacy: .public))")
         lastInsertion = LastInsertion(
             text: text,
             bundleId: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
@@ -149,26 +156,46 @@ final class TextInjector {
         var valueRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(focused, kAXValueAttribute as CFString, &valueRef) == .success,
               let value = valueRef as? String,
-              value.hasSuffix(last.text) else { return .fieldChanged }
+              // Locate the suffix by STRING INDEX, not by subtracting UTF-16
+              // counts: an app that normalized the text (café → cafe+́ ) still
+              // matches canonically, but with a different unit count — count
+              // arithmetic would select and delete the wrong span.
+              let suffixRange = value.range(of: last.text, options: [.anchored, .backwards])
+        else { return .fieldChanged }
+
+        let location = value.utf16.distance(from: value.utf16.startIndex, to: suffixRange.lowerBound.samePosition(in: value.utf16) ?? value.utf16.endIndex)
+        let length = value.utf16.distance(
+            from: suffixRange.lowerBound.samePosition(in: value.utf16) ?? value.utf16.endIndex,
+            to: suffixRange.upperBound.samePosition(in: value.utf16) ?? value.utf16.endIndex
+        )
+        guard length > 0 else { return .fieldChanged }
+        let expectedPrefix = String(value[..<suffixRange.lowerBound])
 
         // Select exactly the inserted suffix, then replace it with nothing.
-        let suffixLength = last.text.utf16.count
-        var range = CFRange(location: (value.utf16.count - suffixLength), length: suffixLength)
+        var range = CFRange(location: location, length: length)
         guard let rangeValue = AXValueCreate(.cfRange, &range),
               AXUIElementSetAttributeValue(
                 focused, kAXSelectedTextRangeAttribute as CFString, rangeValue
-              ) == .success,
-              AXUIElementSetAttributeValue(
-                focused, kAXSelectedTextAttribute as CFString, "" as CFString
               ) == .success else { return .fieldChanged }
-
-        // Verify the deletion actually happened before declaring victory.
-        var afterRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(focused, kAXValueAttribute as CFString, &afterRef) == .success,
-           let after = afterRef as? String,
-           after.hasSuffix(last.text) {
+        guard AXUIElementSetAttributeValue(
+            focused, kAXSelectedTextAttribute as CFString, "" as CFString
+        ) == .success else {
+            // The range was set but the delete refused: collapse the selection
+            // back to a caret so the user's next keystroke can't wipe it.
+            var caret = CFRange(location: location + length, length: 0)
+            if let caretValue = AXValueCreate(.cfRange, &caret) {
+                AXUIElementSetAttributeValue(focused, kAXSelectedTextRangeAttribute as CFString, caretValue)
+            }
             return .fieldChanged
         }
+
+        // Verify EXACTLY: the field must now equal what preceded the suffix.
+        // Anything else means the delete landed somewhere unexpected — report
+        // failure rather than a false "Undone".
+        var afterRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, kAXValueAttribute as CFString, &afterRef) == .success,
+              let after = afterRef as? String,
+              after == expectedPrefix else { return .fieldChanged }
         lastInsertion = nil
         return .undone
     }
@@ -219,13 +246,23 @@ final class TextInjector {
     private func refront(bundleId: String) async -> Bool {
         guard let app = NSRunningApplication
             .runningApplications(withBundleIdentifier: bundleId).first else { return false }
+        // macOS 14+ cooperative activation denies a plain activate() from a
+        // background app unless someone yields to the target — so yield our
+        // own claim first, then ask.
+        NSApp.yieldActivation(toApplicationWithBundleIdentifier: bundleId)
         app.activate()
-        for _ in 0..<10 {
-            try? await Task.sleep(nanoseconds: 100_000_000)
+        for attempt in 0..<10 {
+            // Check FIRST: an instant activation shouldn't pay a 100ms toll.
             if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleId {
+                // A beat for the app to restore its first responder.
                 try? await Task.sleep(nanoseconds: 120_000_000)
                 return true
             }
+            if attempt == 4 {
+                NSApp.yieldActivation(toApplicationWithBundleIdentifier: bundleId)
+                app.activate()   // one more nudge
+            }
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
         return false
     }
@@ -273,25 +310,46 @@ final class TextInjector {
         )
         guard status == .success else { return false }
 
-        // Verify pass 1: after a real insert the selection range moves (caret
-        // lands after the inserted text). If nothing changed, the app lied.
-        let rangeAfter = selectedRange(of: focused)
-        guard let after = rangeAfter else { return false }
-        if let before = rangeBefore, before.location == after.location, before.length == after.length {
-            return false
-        }
-        // Verify pass 2: when the field's value is readable, our text must
-        // actually be in it — some apps move the caret without inserting.
+        // Electron-style apps apply AX writes asynchronously; reading back
+        // instantly sees stale state and a REAL insert gets typed a second
+        // time. A short settle is cheaper than duplicated text.
+        usleep(40_000)
+
+        // Verify pass 1 — the field's value, when readable, is authoritative.
+        // Compare through a fold that survives what apps do to inserted text
+        // (smart quotes, case fixes, single-line fields flattening newlines):
+        // a transformed insert is still a SUCCESSFUL insert.
         var valueRef: CFTypeRef?
         if AXUIElementCopyAttributeValue(focused, kAXValueAttribute as CFString, &valueRef) == .success,
            let value = valueRef as? String,
            value.count < 200_000 {
-            let probe = String(text.prefix(80))
-            if !probe.isEmpty, !value.contains(probe) {
-                return false
+            let probe = Self.verifyFold(String(text.prefix(80)))
+            if !probe.isEmpty {
+                return Self.verifyFold(value).contains(probe)
             }
         }
+
+        // Verify pass 2 (value unreadable): the caret must have moved. Apps
+        // that report no range at all, or a frozen range, fail here and fall
+        // back to typing — for them the AX write almost never landed anyway.
+        guard let after = selectedRange(of: focused) else { return false }
+        if let before = rangeBefore, before.location == after.location, before.length == after.length {
+            return false
+        }
         return true
+    }
+
+    /// Case, curly quotes, and whitespace runs — the transforms target apps
+    /// apply to freshly inserted text — folded away for verification.
+    static func verifyFold(_ text: String) -> String {
+        text.lowercased()
+            .replacingOccurrences(of: "\u{201C}", with: "\"")
+            .replacingOccurrences(of: "\u{201D}", with: "\"")
+            .replacingOccurrences(of: "\u{2018}", with: "'")
+            .replacingOccurrences(of: "\u{2019}", with: "'")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     private func selectedRange(of element: AXUIElement) -> CFRange? {
@@ -372,21 +430,38 @@ final class TextInjector {
     // MARK: - Direct typing path
 
     /// Synthesizes bare key events carrying unicode payloads — no modifiers,
-    /// no clipboard. ~20 UTF-16 units per event is the practical batch limit.
-    private func injectViaTyping(_ text: String) {
-        guard let source = CGEventSource(stateID: .hidSystemState) else { return }
-        let units = Array(text.utf16)
-        var index = 0
-        while index < units.count {
-            let chunk = Array(units[index..<min(index + 20, units.count)])
+    /// no clipboard. Chunks are built on GRAPHEME boundaries (≤20 UTF-16
+    /// units each): cutting a surrogate pair in half sends two broken events
+    /// and the target renders � instead of the emoji. Posts are paced 2ms
+    /// apart — Electron targets drop or reorder unpaced synthetic unicode.
+    /// Returns false when the events could not even be created.
+    private func injectViaTyping(_ text: String) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState) else {
+            Log.injection.error("typing path unavailable — CGEventSource creation failed")
+            return false
+        }
+        var chunks: [[UniChar]] = []
+        var current: [UniChar] = []
+        for character in text {
+            let units = Array(String(character).utf16)
+            if current.count + units.count > 20, !current.isEmpty {
+                chunks.append(current)
+                current = []
+            }
+            current.append(contentsOf: units)
+        }
+        if !current.isEmpty { chunks.append(current) }
+
+        for chunk in chunks {
             let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
             let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
             keyDown?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
             keyUp?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
             keyDown?.post(tap: .cghidEventTap)
             keyUp?.post(tap: .cghidEventTap)
-            index += 20
+            usleep(2_000)
         }
+        return true
     }
 
     private func postCommandV() {

@@ -53,7 +53,22 @@ final class DictationCoordinator {
 
     // MARK: - Engine warm-up
 
+    private var prepareTask: Task<Void, Never>?
+
     func prepareEngine() async {
+        if let prepareTask {
+            // Launch warm-up and a first hotkey press can race here; the
+            // second caller must wait, not start a second model download.
+            await prepareTask.value
+            return
+        }
+        let task = Task { await self.performPrepare() }
+        prepareTask = task
+        await task.value
+        prepareTask = nil
+    }
+
+    private func performPrepare() async {
         hud.onFinish = { [weak self] in self?.toggle() }
         hud.onPolish = { [weak self] promptMode in
             self?.finishWithPolish(promptMode ? .createPrompt : .improve)
@@ -75,9 +90,9 @@ final class DictationCoordinator {
         switch state {
         case .idle:
             Task { await start() }
-        case .recording:
-            Task { await stop() }
-        case .starting, .finishing:
+        case .recording, .starting:
+            requestStop()
+        case .finishing:
             break
         }
     }
@@ -94,6 +109,24 @@ final class DictationCoordinator {
     /// True while the current fn press landed during an active session (a
     /// second tap) — its release stops, regardless of how long it was held.
     private var pressArmsStop = false
+    /// A stop that arrived while the session was still STARTING. `start()`
+    /// can take seconds on a cold launch — a push-to-talk release or second
+    /// tap in that window must stop the session the moment it's up, not be
+    /// silently discarded (which reads as "the hotkey is dead").
+    private var pendingStopRequested = false
+
+    /// Stop now if possible; if the session is still starting, arm the stop
+    /// to fire the moment it finishes coming up.
+    private func requestStop() {
+        switch state {
+        case .recording:
+            Task { await stop() }
+        case .starting:
+            pendingStopRequested = true
+        case .idle, .finishing:
+            break
+        }
+    }
 
     /// The fn preset reports raw presses; resolve them against real session
     /// state here, because only the coordinator knows whether the session the
@@ -113,7 +146,11 @@ final class DictationCoordinator {
                 Task { await start() }
             case .recording:
                 pressArmsStop = true
-            case .starting, .finishing:
+            case .starting:
+                // A second tap while the first is still spinning up: its
+                // release should stop, same as if the session were live.
+                if !sessionStartedByPress { pressArmsStop = true }
+            case .finishing:
                 break
             }
 
@@ -121,13 +158,13 @@ final class DictationCoordinator {
             if pressArmsStop {
                 // Second tap of a toggle: release always stops.
                 pressArmsStop = false
-                Task { await stop() }
+                requestStop()
             } else if sessionStartedByPress {
                 sessionStartedByPress = false
                 if held >= Self.pushToTalkThreshold {
                     // Push-to-talk: they held fn while speaking; letting go
-                    // is the whole gesture.
-                    Task { await stop() }
+                    // is the whole gesture — even if startup hasn't finished.
+                    requestStop()
                 }
                 // A quick tap: leave the session running (toggle mode).
             }
@@ -218,6 +255,15 @@ final class DictationCoordinator {
                 }
             }
 
+            // A cancel (fn chord, HUD ✕) may have landed while we were
+            // suspended above — resurrecting the session here would leave an
+            // invisible recording with no HUD. Check before touching audio.
+            guard state == .starting else {
+                await engine.cancelSession()
+                hud.hide()
+                return
+            }
+
             let format = await engine.preferredAudioFormat
             audio.onBuffer = { [engine] buffer in
                 engine.feed(buffer)
@@ -238,10 +284,21 @@ final class DictationCoordinator {
                     self.hideHUDAfterDelay(seconds: 3)
                 }
             }
+            guard state == .starting else {
+                await engine.cancelSession()
+                hud.hide()
+                return
+            }
             try audio.start(targetFormat: format)
             state = .recording
             caretDot.show { [injector] in injector.caretScreenRect() }
             startSilenceWatchdog()
+            if pendingStopRequested {
+                // A push-to-talk release or second tap arrived during the
+                // spin-up: honor it now that there is a session to stop.
+                pendingStopRequested = false
+                Task { await stop() }
+            }
         } catch {
             audio.stop()
             await engine.cancelSession()
@@ -254,6 +311,7 @@ final class DictationCoordinator {
     private func stop() async {
         guard state == .recording else { return }
         state = .finishing
+        pendingStopRequested = false
         caretDot.hide()
         stopSilenceWatchdog()
         hud.state.phase = .finalizing
@@ -382,6 +440,12 @@ final class DictationCoordinator {
             case .copiedOnly:
                 hud.state.phase = .noAccessibility
                 hideHUDAfterDelay(seconds: 3)
+            case .copiedFocusLost:
+                hud.state.phase = .error("App changed — copied, press ⌘V")
+                hideHUDAfterDelay(seconds: 3)
+            case .copiedSecureInput:
+                hud.state.phase = .error("Secure field — copied, press ⌘V")
+                hideHUDAfterDelay(seconds: 3)
             }
         } catch {
             await engine.cancelSession()
@@ -406,6 +470,7 @@ final class DictationCoordinator {
         guard state == .idle else { return }
         switch injector.undoLastInsertion() {
         case .undone:
+            learner.cancelPending()
             hud.show()
             hud.state.phase = .notice("Undone")
             hideHUDAfterDelay(seconds: 1.5)
@@ -421,6 +486,9 @@ final class DictationCoordinator {
         guard state == .recording || state == .starting else { return }
         state = .finishing
         forcedCommand = nil
+        pendingStopRequested = false
+        sessionStartedByPress = false
+        pressArmsStop = false
         caretDot.hide()
         stopSilenceWatchdog()
         audio.stop()

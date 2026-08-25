@@ -26,8 +26,7 @@ final class CorrectionLearner {
               TextInjector.isTrusted(promptIfNeeded: false),
               !text.isEmpty else { return }
 
-        guard let element = Self.focusedElement(),
-              let baseline = Self.value(of: element) else { return }
+        guard let element = Self.focusedElement() else { return }
 
         let insertedTokens = WordDiff.tokens(text)
         guard !insertedTokens.isEmpty else { return }
@@ -35,10 +34,22 @@ final class CorrectionLearner {
         pending?.cancel()
         pending = Task { [weak self] in
             guard let self else { return }
+            // The typed injection path is still posting events when this is
+            // called — snapshotting instantly would diff the insertion itself
+            // as a "correction". Let the field settle first.
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled, let baseline = Self.value(of: element) else { return }
             try? await Task.sleep(nanoseconds: UInt64(self.inspectionDelay * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self.inspect(element: element, baseline: baseline, inserted: Set(insertedTokens.map { $0.lowercased() }))
         }
+    }
+
+    /// Undo rips the inserted text back out — a pending inspection would
+    /// then read the hole (or a retype) as vocabulary corrections.
+    func cancelPending() {
+        pending?.cancel()
+        pending = nil
     }
 
     private func inspect(element: AXUIElement, baseline: String, inserted: Set<String>) {

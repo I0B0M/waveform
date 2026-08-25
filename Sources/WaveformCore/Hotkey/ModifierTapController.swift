@@ -33,10 +33,16 @@ final class ModifierTapController: @unchecked Sendable {
     private let trigger: Trigger
 
     private var thread: Thread?
-    private var threadRunLoop: CFRunLoop?
-    private var tap: CFMachPort?
+    // Written on the tap thread, read/cleared on main — boxed, because an
+    // unsynchronized CFMachPort read during teardown is a retain race.
+    private let tapBox = LockedBox<CFMachPort?>(nil)
+    private let runLoopBox = LockedBox<CFRunLoop?>(nil)
+    /// Set by stop(); checked by the tap thread before entering its run loop,
+    /// so a stop() that lands in the gap between tap creation and
+    /// CFRunLoopRun() can't strand a running thread forever.
+    private let stopped = LockedBox<Bool>(false)
 
-    // Tap-thread-only state.
+    // Tap-thread-only state (never touched from main).
     private var doubleTapDetector = DoubleTapDetector(window: 0.6)
     private var singleTapDetector = SingleTapDetector()
     private var watchedWasDown = false
@@ -64,10 +70,10 @@ final class ModifierTapController: @unchecked Sendable {
                 ready.signal()
                 return
             }
-            self.threadRunLoop = CFRunLoopGetCurrent()
+            self.runLoopBox.value = CFRunLoopGetCurrent()
             created = self.createTapOnCurrentThread()
             ready.signal()
-            if created {
+            if created, !self.stopped.value {
                 CFRunLoopRun()
             }
         }
@@ -79,24 +85,25 @@ final class ModifierTapController: @unchecked Sendable {
         ready.wait()
         guard created else {
             self.thread = nil
-            self.threadRunLoop = nil
+            self.runLoopBox.value = nil
+            Log.hotkey.error("event tap creation FAILED — Input Monitoring / Accessibility not effective for this binary")
             throw HotkeyManager.HotkeyError.accessibilityRequired
         }
     }
 
     func stop() {
-        if let tap {
+        stopped.value = true
+        if let tap = tapBox.value {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
-        if let runLoop = threadRunLoop {
+        if let runLoop = runLoopBox.value {
             CFRunLoopStop(runLoop)
         }
-        tap = nil
-        threadRunLoop = nil
+        tapBox.value = nil
+        runLoopBox.value = nil
         thread = nil
-        doubleTapDetector = DoubleTapDetector(window: 0.6)
-        singleTapDetector = SingleTapDetector()
-        watchedWasDown = false
+        // Detector state belongs to the tap thread; controllers are one-shot
+        // (register builds a fresh one), so it is never reset from here.
     }
 
     /// One entry point for both detectors, so `handle` stays agnostic of
@@ -153,7 +160,7 @@ final class ModifierTapController: @unchecked Sendable {
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        self.tap = tap
+        self.tapBox.value = tap
         return true
     }
 
@@ -161,10 +168,20 @@ final class ModifierTapController: @unchecked Sendable {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // Secure-input fields or a hiccup paused us; resume immediately.
-            if let tap {
+            if let tap = tapBox.value {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
-            NSLog("Waveform: modifier tap was disabled (%d) — re-enabled", type.rawValue)
+            // Events that arrived while disabled are gone. If one of them was
+            // the fn-UP, the detector believes the key is still held and the
+            // NEXT genuine press matches nothing — one completely dead press.
+            // Resync everything and tell the coordinator to abandon any press
+            // that is now missing its release.
+            watchedWasDown = false
+            singleTapDetector = SingleTapDetector()
+            doubleTapDetector = DoubleTapDetector(window: 0.6)
+            let onGesture = onGesture
+            DispatchQueue.main.async { onGesture(.pressCancelled) }
+            Log.hotkey.notice("modifier tap was disabled (\(type.rawValue, privacy: .public)) — re-enabled and resynced")
 
         case .flagsChanged:
             let timestamp = Double(event.timestamp) / 1_000_000_000
@@ -189,6 +206,7 @@ final class ModifierTapController: @unchecked Sendable {
             }
 
             if let gesture {
+                Log.hotkey.notice("gesture: \(String(describing: gesture), privacy: .public)")
                 let onGesture = onGesture
                 DispatchQueue.main.async { onGesture(gesture) }
             }

@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import IOKit.hid
 import ServiceManagement
 import SwiftUI
 
@@ -66,19 +67,36 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             try hotkeyManager.register(preset: preset)
             hotkeyWarning = nil
         } catch HotkeyManager.HotkeyError.accessibilityRequired {
-            // The tap can't exist until Accessibility is granted. Say so
-            // out loud and re-register automatically once the grant lands.
-            hotkeyWarning = "⚠️ \(preset.label) needs Accessibility — waiting for the grant"
-            NSLog("Waveform: event tap unavailable; prompting for Accessibility")
-            _ = TextInjector.isTrusted(promptIfNeeded: true)
+            // The tap is gated by Input Monitoring (sometimes satisfied by
+            // Accessibility). Ask for the RIGHT permission, then keep
+            // re-attempting the registration itself — polling a permission
+            // API here would watch the wrong gate and never un-stick.
+            hotkeyWarning = "⚠️ \(preset.label) needs Input Monitoring — check Privacy & Security"
+            Log.hotkey.error("event tap unavailable; requesting Input Monitoring")
+            _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
             hotkeyRetryTask = Task { [weak self] in
+                var failuresWhileGranted = 0
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    guard let self else { return }
-                    if TextInjector.isTrusted(promptIfNeeded: false) {
-                        self.registerHotkey()
+                    guard let self, self.hotkeyManager.tapControllerMissing else { return }
+                    if (try? self.hotkeyManager.register(preset: AppSettings.shared.hotkeyPreset)) != nil {
+                        self.hotkeyWarning = nil
+                        Log.hotkey.notice("event tap registered on retry")
                         self.refreshMenu()
                         return
+                    }
+                    // The grant can show as ✓ while the RUNNING process stays
+                    // unauthorized (granted after launch on versions that ask
+                    // to quit-and-reopen, or a grant staled by a binary swap).
+                    // Detect that contradiction and say the only fix out loud.
+                    if IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted {
+                        failuresWhileGranted += 1
+                        if failuresWhileGranted == 3 {
+                            self.hotkeyWarning =
+                                "⚠️ Input Monitoring is granted but not applied — quit and reopen Waveform"
+                            Log.hotkey.error("tap creation failing while IOHIDCheckAccess says granted — relaunch required")
+                            self.refreshMenu()
+                        }
                     }
                 }
             }
@@ -164,6 +182,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         axItem.target = self
         menu.addItem(axItem)
 
+        // Input Monitoring gates the fn/double-tap event tap. Known macOS
+        // trap: the grant can go stale after the binary is replaced while
+        // still SHOWING as enabled — the fix is toggling it off and on.
+        if preset.isBareModifier {
+            let imOK = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+            let imItem = NSMenuItem(
+                title: imOK
+                    ? "Input Monitoring: ✓ granted"
+                    : "Input Monitoring: ✗ — click, then toggle Waveform OFF and ON",
+                action: imOK ? nil : #selector(openInputMonitoringSettings),
+                keyEquivalent: ""
+            )
+            imItem.target = self
+            menu.addItem(imItem)
+        }
+
         menu.addItem(.separator())
 
         let undoItem = NSMenuItem(
@@ -231,6 +265,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
     @objc private func openAccessibilitySettings() {
         NSWorkspace.shared.open(
             URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        )
+    }
+
+    @objc private func openInputMonitoringSettings() {
+        NSWorkspace.shared.open(
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
         )
     }
 

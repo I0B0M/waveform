@@ -84,6 +84,12 @@ final class HotkeyManager {
     // Event-tap path (runs on its own thread — see ModifierTapController).
     private var tapController: ModifierTapController?
 
+    /// True when a bare-modifier preset is selected but its tap isn't running
+    /// (permission missing) — the condition the retry loop watches.
+    var tapControllerMissing: Bool {
+        AppSettings.shared.hotkeyPreset.isBareModifier && tapController == nil
+    }
+
     enum HotkeyError: Error, LocalizedError {
         case registrationFailed(OSStatus)
         case accessibilityRequired
@@ -93,7 +99,9 @@ final class HotkeyManager {
             case .registrationFailed(let status):
                 return "Hotkey registration failed (\(status))."
             case .accessibilityRequired:
-                return "Detecting a bare modifier key needs the Accessibility permission."
+                return "Detecting a bare modifier key needs Input Monitoring (or Accessibility). "
+                    + "If it was working and stopped after an update, toggle Waveform OFF and back ON "
+                    + "in System Settings → Privacy & Security → Input Monitoring."
             }
         }
     }
@@ -109,7 +117,11 @@ final class HotkeyManager {
                 watching: preset == .fnTap ? .maskSecondaryFn : .maskControl,
                 trigger: preset == .fnTap ? .press : .doubleTap
             ) { [weak self] gesture in
-                Task { @MainActor in
+                // Already on the main queue (the controller dispatches there);
+                // deliver synchronously — a Task per gesture has no FIFO
+                // guarantee, and an up processed before its own down would
+                // scramble the press state machine.
+                MainActor.assumeIsolated {
                     switch gesture {
                     case .toggle: self?.onGesture?(.toggle)
                     case .pressBegan: self?.onGesture?(.pressBegan)
@@ -120,6 +132,7 @@ final class HotkeyManager {
             }
             try controller.start()
             tapController = controller
+            Log.hotkey.notice("event tap running for preset \(preset.rawValue, privacy: .public)")
             return
         }
         installHandlerIfNeeded()
