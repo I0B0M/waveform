@@ -1,5 +1,6 @@
 import Carbon.HIToolbox
 import AppKit
+import IOKit.hid
 
 /// A global hotkey the user can pick in Settings.
 ///
@@ -110,6 +111,18 @@ final class HotkeyManager {
         unregister()
 
         if preset.isBareModifier {
+            // Creating the tap can SUCCEED without Input Monitoring (the mask
+            // includes permission-free mouse events) while macOS silently
+            // withholds every keyboard event — a hotkey that looks registered
+            // and never fires. Ask for the grant explicitly, up front: this
+            // is also what puts Waveform's row into the Input Monitoring list
+            // at all after a TCC reset.
+            let listenAccess = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+            if listenAccess != kIOHIDAccessTypeGranted {
+                Log.hotkey.notice("Input Monitoring not granted (\(listenAccess.rawValue, privacy: .public)) — requesting")
+                _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            }
+
             // The gesture closure is @Sendable but always dispatched onto the
             // main queue by the controller, so hopping back onto the main
             // actor here is safe.
@@ -132,7 +145,10 @@ final class HotkeyManager {
             }
             try controller.start()
             tapController = controller
-            Log.hotkey.notice("event tap running for preset \(preset.rawValue, privacy: .public)")
+            // Tap creation ≠ keyboard delivery: log the grant state so a
+            // "running" tap that receives nothing is self-diagnosing.
+            let granted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+            Log.hotkey.notice("event tap running for preset \(preset.rawValue, privacy: .public) (input monitoring granted: \(granted, privacy: .public))")
             return
         }
         installHandlerIfNeeded()
