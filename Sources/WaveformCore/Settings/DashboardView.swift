@@ -26,6 +26,12 @@ public struct DashboardView: View {
         }
     }
 
+    /// The single accent: everything interactive or highlighted uses this,
+    /// so the disco identity lives in the app mark instead of shouting from
+    /// every card at once.
+    static let accent = Color(red: 0.62, green: 0.44, blue: 1.00)
+    static let cardStroke = Color.white.opacity(0.08)
+
     static let orange = Color(red: 1.00, green: 0.45, blue: 0.10)
     static let violet = Color(red: 0.72, green: 0.20, blue: 1.00)
     static let cyan = Color(red: 0.16, green: 0.85, blue: 1.00)
@@ -166,22 +172,17 @@ private struct HomeTab: View {
                     DiscoIconView(showsPlate: false)
                         .frame(width: 46, height: 46)
                     Text(greeting)
-                        .font(.system(size: 32, weight: .black, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [DashboardView.orange, DashboardView.pink, DashboardView.violet, DashboardView.cyan],
-                                startPoint: .leading, endPoint: .trailing
-                            )
-                        )
+                        .font(.system(size: 27, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.primary)
                 }
                 Text("Speak anywhere. Clean text lands at your cursor. 100% on-device.")
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 14) {
-                    statCard("Words dictated", "\(history.totalWords)", DashboardView.orange)
-                    statCard("Dictations", "\(history.totalDictations)", DashboardView.violet)
-                    statCard("This week", "\(history.wordsThisWeek) words", DashboardView.cyan)
-                    statCard("Speed", history.averageWordsPerMinute > 0 ? "\(history.averageWordsPerMinute) wpm" : "—", DashboardView.pink)
+                    statCard("Words dictated", "\(history.totalWords)")
+                    statCard("Dictations", "\(history.totalDictations)")
+                    statCard("This week", "\(history.wordsThisWeek) words")
+                    statCard("Speed", history.averageWordsPerMinute > 0 ? "\(history.averageWordsPerMinute) wpm" : "—")
                 }
 
                 if !topApps.isEmpty {
@@ -196,7 +197,7 @@ private struct HomeTab: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .background(Capsule().fill(.white.opacity(0.06)))
-                                .overlay(Capsule().strokeBorder(DashboardView.cyan.opacity(0.3), lineWidth: 1))
+                                .overlay(Capsule().strokeBorder(DashboardView.cardStroke, lineWidth: 1))
                             }
                         }
                     }
@@ -227,23 +228,23 @@ private struct HomeTab: View {
         }
     }
 
-    private func statCard(_ title: String, _ value: String, _ color: Color) -> some View {
+    private func statCard(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption).foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(color)
-                .shadow(color: color.opacity(0.6), radius: 8)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(color.opacity(0.35), lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.cardStroke, lineWidth: 1))
     }
 
     private func tip(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "waveform").foregroundStyle(DashboardView.cyan).font(.caption)
+            Image(systemName: "waveform").foregroundStyle(DashboardView.accent).font(.caption)
             Text(text).font(.callout).foregroundStyle(.primary.opacity(0.85))
         }
     }
@@ -269,7 +270,7 @@ private struct DictionaryTab: View {
                 .scrollContentBackground(.hidden)
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.violet.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.cardStroke, lineWidth: 1))
                 .onChange(of: dictionaryText) { _, newValue in
                     AppSettings.shared.dictionaryText = newValue
                 }
@@ -310,7 +311,7 @@ private struct DictionaryTab: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(Capsule().fill(.white.opacity(0.06)))
-                            .overlay(Capsule().strokeBorder(DashboardView.violet.opacity(0.35), lineWidth: 1))
+                            .overlay(Capsule().strokeBorder(DashboardView.cardStroke, lineWidth: 1))
                         }
                     }
                 }
@@ -348,7 +349,7 @@ private struct PromptsTab: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("//\(template.trigger)")
                                     .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(DashboardView.cyan)
+                                    .foregroundStyle(DashboardView.accent)
                                 Text(template.title)
                                     .font(.callout)
                                     .foregroundStyle(.primary.opacity(0.9))
@@ -404,7 +405,7 @@ private struct PromptsTab: View {
                                 Image(systemName: "trash")
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(DashboardView.pink.opacity(0.85))
+                            .foregroundStyle(.secondary)
                         }
 
                         Text("Instructions given to the local model")
@@ -418,7 +419,7 @@ private struct PromptsTab: View {
                         .scrollContentBackground(.hidden)
                         .padding(10)
                         .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.cyan.opacity(0.3), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.cardStroke, lineWidth: 1))
                     }
                 } else {
                     VStack {
@@ -495,12 +496,12 @@ private struct HistoryRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if let app = record.appName {
-                        Text("→ \(app)").font(.caption).foregroundStyle(DashboardView.cyan.opacity(0.8))
+                        Text("→ \(app)").font(.caption).foregroundStyle(DashboardView.accent.opacity(0.9))
                     }
                     Spacer()
                     Text(copied ? "Copied ✓" : "\(record.wordCount) words")
                         .font(.caption)
-                        .foregroundStyle(copied ? DashboardView.cyan : .secondary)
+                        .foregroundStyle(copied ? DashboardView.accent : .secondary)
                 }
                 Text(record.text)
                     .font(.callout)
@@ -565,7 +566,7 @@ private struct SnippetsTab: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("“\(snippet.trigger)”")
                                         .font(.callout.weight(.semibold))
-                                        .foregroundStyle(DashboardView.cyan)
+                                        .foregroundStyle(DashboardView.accent)
                                     Text(snippet.expansion)
                                         .font(.callout)
                                         .lineLimit(2)
@@ -577,7 +578,7 @@ private struct SnippetsTab: View {
                                     AppSettings.shared.snippets = snippets
                                 } label: {
                                     Image(systemName: "trash")
-                                        .foregroundStyle(DashboardView.pink.opacity(0.8))
+                                        .foregroundStyle(.secondary)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -610,7 +611,7 @@ private struct ScratchpadTab: View {
                 .scrollContentBackground(.hidden)
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.05)))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.orange.opacity(0.3), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(DashboardView.cardStroke, lineWidth: 1))
         }
         .padding(28)
     }

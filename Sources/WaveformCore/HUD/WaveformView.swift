@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// 90s retro-futuristic music-visualizer waveform: three neon ribbons
-/// (sunset orange, ultraviolet magenta, electric cyan) weaving across a dark
-/// void, glowing, amplitude driven by the live microphone level.
+/// Music-visualizer waveform: two ribbons in the app's accent family
+/// (violet and cyan) weaving across a dark void, amplitude driven by the
+/// live microphone level. Two hues that sit next to each other read as one
+/// glowing voice; a third contrasting hue read as noise.
 ///
 /// Rendering notes for efficiency: one Canvas, three strokes per ribbon
 /// (halo, glow, core), no offscreen effects, and the TimelineView pauses
@@ -22,21 +23,15 @@ struct WaveformView: View {
 
     private static let ribbons: [Ribbon] = [
         Ribbon(
-            color: Color(red: 1.00, green: 0.45, blue: 0.10), // sunset orange
-            harmonics: [(1.7, 1.00, 4.8), (3.9, 0.50, -3.4), (7.1, 0.26, 7.2)],
+            color: Color(red: 0.62, green: 0.44, blue: 1.00), // accent violet
+            harmonics: [(1.7, 1.00, 4.2), (3.9, 0.42, -3.0), (7.1, 0.18, 6.0)],
             phaseOffset: 0.0,
-            thickness: 2.4
+            thickness: 2.2
         ),
         Ribbon(
-            color: Color(red: 0.72, green: 0.20, blue: 1.00), // ultraviolet
-            harmonics: [(2.3, 1.00, -4.1), (4.7, 0.45, 5.7), (8.3, 0.22, -6.5)],
-            phaseOffset: 2.1,
-            thickness: 2.0
-        ),
-        Ribbon(
-            color: Color(red: 0.16, green: 0.85, blue: 1.00), // electric cyan
-            harmonics: [(2.9, 1.00, 3.5), (5.3, 0.42, -5.0), (9.7, 0.18, 4.6)],
-            phaseOffset: 4.2,
+            color: Color(red: 0.30, green: 0.80, blue: 1.00), // cyan partner
+            harmonics: [(2.3, 1.00, -3.6), (4.7, 0.40, 4.8), (8.3, 0.16, -5.4)],
+            phaseOffset: 2.6,
             thickness: 1.8
         ),
     ]
@@ -71,13 +66,13 @@ struct WaveformView: View {
             // Halo → glow → hot core, additively blended.
             graphics.stroke(
                 path,
-                with: .color(ribbon.color.opacity(0.18)),
-                style: StrokeStyle(lineWidth: ribbon.thickness * 5, lineCap: .round, lineJoin: .round)
+                with: .color(ribbon.color.opacity(0.12)),
+                style: StrokeStyle(lineWidth: ribbon.thickness * 4, lineCap: .round, lineJoin: .round)
             )
             graphics.stroke(
                 path,
-                with: .color(ribbon.color.opacity(0.55)),
-                style: StrokeStyle(lineWidth: ribbon.thickness * 2.2, lineCap: .round, lineJoin: .round)
+                with: .color(ribbon.color.opacity(0.45)),
+                style: StrokeStyle(lineWidth: ribbon.thickness * 2, lineCap: .round, lineJoin: .round)
             )
             graphics.stroke(
                 path,

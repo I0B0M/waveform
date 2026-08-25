@@ -14,10 +14,8 @@ struct HUDView: View {
     /// Fixed time for deterministic offscreen snapshots.
     var frozenTime: Double? = nil
 
-    private static let orange = Color(red: 1.00, green: 0.45, blue: 0.10)
-    private static let violet = Color(red: 0.72, green: 0.20, blue: 1.00)
-    private static let cyan = Color(red: 0.16, green: 0.85, blue: 1.00)
-    private static let pink = Color(red: 1.00, green: 0.18, blue: 0.57)
+    private static let accent = Color(red: 0.62, green: 0.44, blue: 1.00)
+    private static let cyan = Color(red: 0.30, green: 0.80, blue: 1.00)
 
     private var statusText: String {
         switch state.phase {
@@ -29,13 +27,21 @@ struct HUDView: View {
         }
     }
 
+    /// Working states stay quiet; only the two states that need the user's
+    /// attention (press ⌘V yourself, an error) get a color of their own.
     private var statusColor: Color {
         switch state.phase {
-        case .listening: return Self.orange
-        case .finalizing: return Self.cyan
-        case .polishing: return Self.violet
+        case .listening: return Self.accent
+        case .finalizing, .polishing: return Self.cyan
         case .noAccessibility: return Color(red: 1.00, green: 0.80, blue: 0.20)
-        case .error: return Color(red: 1.00, green: 0.30, blue: 0.30)
+        case .error: return Color(red: 1.00, green: 0.36, blue: 0.36)
+        }
+    }
+
+    private var statusTextColor: Color {
+        switch state.phase {
+        case .listening, .finalizing, .polishing: return .white.opacity(0.45)
+        default: return statusColor
         }
     }
 
@@ -54,7 +60,7 @@ struct HUDView: View {
     // cross-fade between two different views (which read as a flicker).
     var body: some View {
         HStack(spacing: expanded ? 12 : 9) {
-            roundButton(symbol: "xmark", color: Self.pink, enabled: isActive) { onCancel?() }
+            roundButton(symbol: "xmark", color: .white.opacity(0.6), enabled: isActive) { onCancel?() }
                 .frame(width: expanded ? 26 : 0)
                 .opacity(expanded ? 1 : 0)
                 .scaleEffect(expanded ? 1 : 0.4)
@@ -78,9 +84,9 @@ struct HUDView: View {
                     liveText
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(statusText)
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .tracking(2.5)
-                        .foregroundStyle(statusColor.opacity(0.95))
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .tracking(1.8)
+                        .foregroundStyle(statusTextColor)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(height: expanded ? 46 : 0)
@@ -88,7 +94,7 @@ struct HUDView: View {
                 .clipped()
             }
 
-            roundButton(symbol: "sparkles", color: Self.violet, enabled: isActive && canPolish) {
+            roundButton(symbol: "sparkles", color: Self.accent, enabled: isActive && canPolish) {
                 onPolish?(NSEvent.modifierFlags.contains(.option))
             }
             .frame(width: expanded ? 26 : 0)
@@ -109,7 +115,7 @@ struct HUDView: View {
         .frame(width: expanded ? 520 : 196)
         .background(pillBackground)
         .overlay(pillRim)
-        .shadow(color: Self.violet.opacity(0.30), radius: expanded ? 22 : 16, y: 5)
+        .shadow(color: .black.opacity(0.45), radius: expanded ? 18 : 12, y: 6)
         .animation(.spring(response: 0.40, dampingFraction: 0.84), value: expanded)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
@@ -134,19 +140,16 @@ struct HUDView: View {
     }
 
     private var pillRim: some View {
+        // One quiet gradient in the accent family — the rim frames the pill
+        // instead of competing with the waveform inside it.
         Capsule(style: .continuous)
             .strokeBorder(
                 LinearGradient(
-                    colors: [
-                        Self.orange.opacity(0.6),
-                        Self.pink.opacity(0.5),
-                        Self.violet.opacity(0.6),
-                        Self.cyan.opacity(0.6),
-                    ],
+                    colors: [Self.accent.opacity(0.45), Self.cyan.opacity(0.35)],
                     startPoint: .leading,
                     endPoint: .trailing
                 ),
-                lineWidth: 1.2
+                lineWidth: 1
             )
     }
 
