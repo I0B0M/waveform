@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Carbon.HIToolbox
 import IOKit.hid
 import ServiceManagement
 import SwiftUI
@@ -38,6 +39,29 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         // Only for a user-initiated launch: when macOS starts us as a login
         // item this key is false, and popping a window into someone's face at
         // every login is not what "launch at login" should mean.
+        // The hotkey watchers can silently die across system transitions: a
+        // sleep/wake can strand NSEvent monitors, the lock screen eats a
+        // modifier-up and wedges detector state, fast user switching detaches
+        // event taps. Re-registering is cheap and resets everything, so do it
+        // on every transition rather than debugging each one separately.
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
+            workspaceCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    Log.hotkey.notice("system transition (\(name.rawValue, privacy: .public)) — re-registering hotkey")
+                    self?.registerHotkey()
+                }
+            }
+        }
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                Log.hotkey.notice("screen unlocked — re-registering hotkey")
+                self?.registerHotkey()
+            }
+        }
+
         let userLaunched = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
         Log.app.notice("launched (userLaunched: \(userLaunched, privacy: .public))")
         if userLaunched {
@@ -67,13 +91,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             try hotkeyManager.register(preset: preset)
             hotkeyWarning = nil
         } catch HotkeyManager.HotkeyError.accessibilityRequired {
-            // The tap is gated by Input Monitoring (sometimes satisfied by
-            // Accessibility). Ask for the RIGHT permission, then keep
-            // re-attempting the registration itself — polling a permission
-            // API here would watch the wrong gate and never un-stick.
-            hotkeyWarning = "⚠️ \(preset.label) needs Input Monitoring — check Privacy & Security"
-            Log.hotkey.error("event tap unavailable; requesting Input Monitoring")
-            _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            // fn (NSEvent monitors) is gated by Accessibility; double-tap
+            // Control (event tap) by Input Monitoring. Ask for the RIGHT one,
+            // then keep re-attempting the registration itself — polling a
+            // permission API here would watch the wrong gate and never
+            // un-stick.
+            if preset == .fnTap {
+                hotkeyWarning = "⚠️ \(preset.label) needs Accessibility — check Privacy & Security"
+                Log.hotkey.error("fn monitors unavailable; requesting Accessibility")
+                _ = TextInjector.isTrusted(promptIfNeeded: true)
+            } else {
+                hotkeyWarning = "⚠️ \(preset.label) needs Input Monitoring — check Privacy & Security"
+                Log.hotkey.error("event tap unavailable; requesting Input Monitoring")
+                _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            }
             hotkeyRetryTask = Task { [weak self] in
                 var failuresWhileGranted = 0
                 while !Task.isCancelled {
@@ -196,6 +227,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
             )
             imItem.target = self
             menu.addItem(imItem)
+        }
+
+        if IsSecureEventInputEnabled() {
+            let secureItem = NSMenuItem(
+                title: "⚠️ Secure input is on (another app) — hotkeys may be blocked",
+                action: nil,
+                keyEquivalent: ""
+            )
+            secureItem.isEnabled = false
+            menu.addItem(secureItem)
         }
 
         menu.addItem(.separator())

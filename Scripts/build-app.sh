@@ -25,6 +25,19 @@ ensure_cert() {
   if security find-identity -v -p codesigning 2>/dev/null | grep -q "$CERT_NAME"; then
     return
   fi
+  # The cert may EXIST but be untrusted — then find-identity -v skips it and
+  # a naive fallback signs ad-hoc, silently detaching every macOS permission
+  # grant on each rebuild. Trust it instead of recreating it.
+  if security find-certificate -c "$CERT_NAME" ~/Library/Keychains/login.keychain-db >/dev/null 2>&1; then
+    echo "Trusting existing \"$CERT_NAME\" certificate for code signing…"
+    local pem; pem=$(mktemp)
+    security find-certificate -c "$CERT_NAME" -p ~/Library/Keychains/login.keychain-db > "$pem"
+    security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db "$pem" || true
+    rm -f "$pem"
+    if security find-identity -v -p codesigning 2>/dev/null | grep -q "$CERT_NAME"; then
+      return
+    fi
+  fi
   echo "Creating local \"$CERT_NAME\" signing certificate (one time)…"
   local tmp; tmp=$(mktemp -d)
   openssl req -x509 -newkey rsa:2048 -keyout "$tmp/key.pem" -out "$tmp/cert.pem" \
@@ -50,6 +63,15 @@ if [ -z "$IDENTITY" ]; then
     IDENTITY="$CERT_NAME"
   else
     IDENTITY="-"
+    cat >&2 <<'WARN'
+============================================================================
+WARNING: signing AD-HOC — no valid "Waveform Dev" identity.
+Every rebuild will look like a brand-new app to macOS: Microphone,
+Accessibility, and Input Monitoring grants will silently detach each time
+(System Settings keeps showing them as ON). Fix once with:
+  security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db <cert.pem>
+============================================================================
+WARN
   fi
 fi
 
