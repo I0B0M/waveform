@@ -78,6 +78,11 @@ final class HistoryStore: ObservableObject {
     func clear() {
         records = []
         save()
+        // The style card is distilled FROM this history — clearing the
+        // corpus clears the distillate, or "clear history" would quietly
+        // leave a profile of it behind in UserDefaults.
+        AppSettings.shared.styleCard = ""
+        AppSettings.shared.styleCardUpdatedAt = 0
     }
 
     // MARK: - Stats

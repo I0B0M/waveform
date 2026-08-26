@@ -32,6 +32,9 @@ final class DictationCoordinator {
     // Per-session context.
     private var sessionStartedAt: TimeInterval = 0
     private var selectionAtStart: String?
+    /// What surrounds the caret at dictation start — read on-device via AX,
+    /// used for grounding and tone, discarded with the session.
+    private var fieldContext: FieldContext?
     private var targetAppName: String?
     private var targetBundleId: String?
     /// Set by the HUD's ✨ button: treat this dictation as a command of this
@@ -223,6 +226,12 @@ final class DictationCoordinator {
         selectionAtStart = injector.readSelectedText()
         targetAppName = NSWorkspace.shared.frontmostApplication?.localizedName
         targetBundleId = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        // Context awareness, the on-device way: read what surrounds the caret
+        // now; it grounds recognition below and tones rewrites later. Secure
+        // fields come back empty by construction.
+        fieldContext = AppSettings.shared.contextAwarenessEnabled
+            ? injector.readFieldContext()
+            : nil
         sessionStartedAt = ProcessInfo.processInfo.systemUptime
 
         hud.show()
@@ -235,7 +244,16 @@ final class DictationCoordinator {
             // recognizer hears "prompt" as "prom" and the command silently
             // looks like ordinary speech.
             // Dictionary + terms learned from corrections + the command words.
-            let hints = AppSettings.shared.recognitionHints
+            // Ground recognition in the conversation itself: names and jargon
+            // visible around the caret are exactly the words about to be
+            // spoken ("reply to Aqeeb about the NestJS branch").
+            var hints = AppSettings.shared.recognitionHints
+            if let fieldContext, !fieldContext.isSecure {
+                let contextHints = ContextHints.extract(
+                    from: fieldContext.before + " " + fieldContext.after
+                )
+                hints = Array((contextHints + hints).prefix(150))
+            }
             try await engine.startSession(contextualStrings: hints) { update in
                 Task { @MainActor [weak self] in
                     if update.display != hudState.transcript {
@@ -338,6 +356,25 @@ final class DictationCoordinator {
                 return
             }
 
+            // One context block for every model call this session: where the
+            // text is going, the tone dial, and the learned style card.
+            let tone: String?
+            switch AppSettings.shared.toneStyle {
+            case .casual: tone = "casual"
+            case .formal: tone = "formal"
+            case .auto:
+                // Directly from the app category — independent of the
+                // punctuation-style toggle, or Auto would be silently inert.
+                tone = AppStyle.cleanStyle(forBundleId: targetBundleId) == .chat
+                    ? "casual, chat-appropriate" : nil
+            }
+            let rewriteContext = LocalRewriter.contextBlock(
+                field: fieldContext,
+                tone: tone,
+                styleCard: AppSettings.shared.styleLearningEnabled
+                    ? AppSettings.shared.styleCard : ""
+            )
+
             let templates = AppSettings.shared.promptTemplates
             let plan = DictationPlanner.plan(for: DictationContext(
                 text: cleaned,
@@ -350,7 +387,7 @@ final class DictationCoordinator {
             ))
 
             var failureNotice: String?
-            let finalText: String
+            var finalText: String
 
             switch plan {
             case .insert(let text):
@@ -366,7 +403,7 @@ final class DictationCoordinator {
             case .rewrite(let kind, let subject, let fallback):
                 hud.state.phase = .polishing
                 let command = DictationCommand(kind: kind, payload: subject, wasExplicit: true)
-                if let rewritten = await rewriter.rewrite(command) {
+                if let rewritten = await rewriter.rewrite(command, context: rewriteContext) {
                     finalText = rewritten
                 } else {
                     // Never lose the words: insert them and say what happened.
@@ -380,7 +417,7 @@ final class DictationCoordinator {
                     break
                 }
                 hud.state.phase = .polishing
-                if let built = await rewriter.build(from: template, input: input) {
+                if let built = await rewriter.build(from: template, input: input, context: rewriteContext) {
                     finalText = built
                 } else {
                     finalText = fallback
@@ -391,7 +428,8 @@ final class DictationCoordinator {
                 hud.state.phase = .polishing
                 guard let transformed = await rewriter.transform(
                     selection: selection,
-                    instruction: instruction
+                    instruction: instruction,
+                    context: rewriteContext
                 ) else {
                     // Leave the selection alone rather than overwriting it with
                     // the instruction the user just spoke.
@@ -413,12 +451,32 @@ final class DictationCoordinator {
                 return
             }
 
+            // Fit onto the caret: mid-sentence, the utterance-initial capital
+            // is wrong and the joining space is missing — fix both. Only when
+            // the cursor is still in the app the context was read from: text
+            // follows the cursor, and a fit against another app's field would
+            // lowercase into an empty box.
+            if let fieldContext, !fieldContext.isSecure, !fieldContext.before.isEmpty,
+               NSWorkspace.shared.frontmostApplication?.bundleIdentifier == targetBundleId {
+                finalText = TextCleaner.fitContinuation(
+                    finalText,
+                    after: fieldContext.before,
+                    following: fieldContext.after
+                )
+            }
+
             let outcome = await injector.inject(
                 finalText,
                 method: AppSettings.shared.insertionMethod,
                 targetBundleId: targetBundleId
             )
-            if AppSettings.shared.saveHistory {
+            // Two independent secure signals gate persistence: the AX subrole
+            // read at start, AND the injector's live IsSecureEventInputEnabled
+            // check — the app must never store a password it visibly refused
+            // to type.
+            let dictatedIntoSecureField = fieldContext?.isSecure == true
+                || outcome == .copiedSecureInput
+            if AppSettings.shared.saveHistory, !dictatedIntoSecureField {
                 HistoryStore.shared.add(
                     text: finalText,
                     duration: ProcessInfo.processInfo.systemUptime - sessionStartedAt,
@@ -426,8 +484,11 @@ final class DictationCoordinator {
                 )
             }
 
-            // Watch for hand corrections to this text and learn the words.
-            learner.noteInsertion(of: finalText)
+            // Watch for hand corrections to this text and learn the words —
+            // never around secure fields.
+            if !dictatedIntoSecureField {
+                learner.noteInsertion(of: finalText)
+            }
 
             switch outcome {
             case .insertedDirectly, .pasted, .typed:

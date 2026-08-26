@@ -31,6 +31,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         Task.detached(priority: .utility) {
             LocalRewriter.prewarm()
         }
+        // Refresh the learned style card off the critical path.
+        Task { await StyleProfiler.refreshIfStale() }
 
         // Opening the app should show something. Without this, double-clicking
         // Waveform.app looks like nothing happened — it's a menu-bar app, so

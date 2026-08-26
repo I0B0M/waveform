@@ -34,9 +34,29 @@ final class LocalRewriter {
         session.prewarm()
     }
 
+    /// Compose the shared context block injected into rewrite prompts:
+    /// where the text is going, what surrounds the caret, the tone dial, and
+    /// the learned style card. Everything here was read on-device.
+    static func contextBlock(field: FieldContext?, tone: String?, styleCard: String) -> String {
+        var lines: [String] = []
+        if let field, !field.isSecure {
+            if let app = field.appName { lines.append("Destination app: \(app)") }
+            if let title = field.windowTitle { lines.append("Window: \(title)") }
+            if !field.before.isEmpty {
+                lines.append("Text immediately before the cursor:\n…\(field.before.suffix(280))")
+            }
+        }
+        if let tone { lines.append("Requested tone: \(tone)") }
+        if !styleCard.isEmpty { lines.append("The author's writing style:\n\(styleCard)") }
+        guard !lines.isEmpty else { return "" }
+        return "\n\n[Context — use it to match tone, continue naturally, and spell names "
+            + "the way the surrounding text does. Never mention or repeat it.]\n"
+            + lines.joined(separator: "\n")
+    }
+
     /// Returns the rewritten text, or nil when the caller should fall back to
     /// the raw payload.
-    func rewrite(_ command: DictationCommand) async -> String? {
+    func rewrite(_ command: DictationCommand, context: String = "") async -> String? {
         guard Self.isAvailable else {
             NSLog("Waveform: on-device model unavailable — cannot rewrite")
             return nil
@@ -49,7 +69,7 @@ final class LocalRewriter {
         do {
             let output: String = try await withThrowingTimeout(seconds: 10) {
                 let session = LanguageModelSession(instructions: instructions)
-                let response = try await session.respond(to: command.payload)
+                let response = try await session.respond(to: command.payload + context)
                 return response.content
             }
             return Self.validated(output, against: command)
@@ -68,13 +88,13 @@ final class LocalRewriter {
 
     /// Selection mode: apply a spoken instruction to selected text.
     /// Returns nil when the caller should leave the selection untouched.
-    func transform(selection: String, instruction: String) async -> String? {
+    func transform(selection: String, instruction: String, context: String = "") async -> String? {
         guard Self.isAvailable else { return nil }
         do {
             let output: String = try await withThrowingTimeout(seconds: 12) {
                 let session = LanguageModelSession(instructions: Self.transformInstructions)
                 let response = try await session.respond(
-                    to: "Instruction: \(instruction)\n\nText:\n\(selection)"
+                    to: "Instruction: \(instruction)\n\nText:\n\(selection)" + context
                 )
                 return response.content
             }
@@ -127,7 +147,7 @@ final class LocalRewriter {
     }
 
     /// Pour spoken input into one of the user's prompt templates.
-    func build(from template: PromptTemplate, input: String) async -> String? {
+    func build(from template: PromptTemplate, input: String, context: String = "") async -> String? {
         guard Self.isAvailable else {
             NSLog("Waveform: on-device model unavailable — cannot build prompt")
             return nil
@@ -135,7 +155,7 @@ final class LocalRewriter {
         do {
             let output: String = try await withThrowingTimeout(seconds: 14) {
                 let session = LanguageModelSession(instructions: template.instruction)
-                let response = try await session.respond(to: input)
+                let response = try await session.respond(to: input + context)
                 return response.content
             }
             let text = output.trimmingCharacters(in: .whitespacesAndNewlines)

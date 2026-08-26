@@ -10,6 +10,9 @@ struct SettingsView: View {
     @State private var aiCommandsEnabled: Bool = AppSettings.shared.aiCommandsEnabled
     @State private var contextAwareStyle: Bool = AppSettings.shared.contextAwareStyle
     @State private var voiceCommandsEnabled: Bool = AppSettings.shared.voiceCommandsEnabled
+    @State private var toneStyle: AppSettings.ToneStyle = AppSettings.shared.toneStyle
+    @State private var contextAwareness: Bool = AppSettings.shared.contextAwarenessEnabled
+    @State private var styleLearning: Bool = AppSettings.shared.styleLearningEnabled
 
 
     private static let silenceChoices: [(label: String, value: Double)] = [
@@ -97,6 +100,38 @@ struct SettingsView: View {
                     AppSettings.shared.insertionMethod = newValue
                 }
                 Text("If dictated text ever fails to appear, switch to “Type characters directly”.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Context awareness (on-device)", isOn: $contextAwareness)
+                    .onChange(of: contextAwareness) { _, newValue in
+                        AppSettings.shared.contextAwarenessEnabled = newValue
+                    }
+                Text("Reads the text around your cursor via Accessibility — locally, never stored, never sent — to hear names the way the conversation spells them, continue mid-sentence naturally, and match tone. Password fields are always excluded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker("Rewrite tone", selection: $toneStyle) {
+                    ForEach(AppSettings.ToneStyle.allCases) { tone in
+                        Text(tone.label).tag(tone)
+                    }
+                }
+                .onChange(of: toneStyle) { _, newValue in
+                    AppSettings.shared.toneStyle = newValue
+                }
+
+                Toggle("Learn my writing style", isOn: $styleLearning)
+                    .onChange(of: styleLearning) { _, newValue in
+                        AppSettings.shared.styleLearningEnabled = newValue
+                        if !newValue {
+                            // Off means off: drop the stored profile too.
+                            AppSettings.shared.styleCard = ""
+                            AppSettings.shared.styleCardUpdatedAt = 0
+                        }
+                    }
+                Text("Distills your local dictation history into a style profile that shapes AI rewrites — greetings, formality, emoji habits. Built and kept on this Mac only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

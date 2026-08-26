@@ -209,6 +209,72 @@ final class TextInjector {
         return .undone
     }
 
+    /// Read what surrounds the caret — on-device context awareness. Secure
+    /// fields are detected FIRST and never read: the returned context then
+    /// carries only the flag. Bounded reads (400 before / 120 after) — enough
+    /// for tone and continuation, never the document.
+    func readFieldContext() -> FieldContext {
+        var context = FieldContext(
+            appName: NSWorkspace.shared.frontmostApplication?.localizedName,
+            bundleId: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+            windowTitle: nil
+        )
+        guard Self.isTrusted(promptIfNeeded: false) else { return context }
+
+        // Fail closed on BOTH secure signals before reading anything: the AX
+        // subrole, and the system-wide secure-input flag (a password field
+        // holding the keyboard raises it even when the app's AX tree lies).
+        if IsSecureEventInputEnabled() {
+            context.isSecure = true
+            return context
+        }
+
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
+        ) == .success, let focusedRef else { return context }
+        let focused = focusedRef as! AXUIElement
+
+        var subroleRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(focused, kAXSubroleAttribute as CFString, &subroleRef) == .success,
+           let subrole = subroleRef as? String,
+           subrole == (kAXSecureTextFieldSubrole as String) {
+            context.isSecure = true
+            return context
+        }
+
+        var windowRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(focused, kAXWindowAttribute as CFString, &windowRef) == .success,
+           let windowRef, CFGetTypeID(windowRef) == AXUIElementGetTypeID() {
+            var titleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(windowRef as! AXUIElement, kAXTitleAttribute as CFString, &titleRef) == .success,
+               let title = titleRef as? String, !title.isEmpty {
+                context.windowTitle = String(title.prefix(120))
+            }
+        }
+
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, kAXValueAttribute as CFString, &valueRef) == .success,
+              let value = valueRef as? String,
+              !value.isEmpty, value.utf16.count < 200_000,
+              let range = selectedRange(of: focused) else { return context }
+
+        let caret = min(max(0, range.location), value.utf16.count)
+        let utf16 = value.utf16
+        if let caretIndex = utf16.index(utf16.startIndex, offsetBy: caret, limitedBy: utf16.endIndex)?
+            .samePosition(in: value) {
+            context.before = String(value[..<caretIndex].suffix(400))
+            // Skip past the selection (doomed text) — in UTF-16 units, which
+            // is what the AX range counts in.
+            let selectionEnd = min(caret + max(range.length, 0), value.utf16.count)
+            let afterStart = utf16.index(utf16.startIndex, offsetBy: selectionEnd, limitedBy: utf16.endIndex)?
+                .samePosition(in: value) ?? caretIndex
+            context.after = String(value[afterStart...].prefix(120))
+        }
+        return context
+    }
+
     /// Screen rectangle of the caret in the focused element, in Cocoa
     /// (bottom-left-origin) coordinates — for the caret-side recording dot.
     /// nil whenever the focused app doesn't expose it; callers must not guess.

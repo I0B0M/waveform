@@ -18,6 +18,11 @@ final class AppSettings {
         static let contextAwareStyle = "contextAwareStyle"
         static let snippets = "snippets"
         static let voiceCommandsEnabled = "voiceCommandsEnabled"
+        static let toneStyle = "toneStyle"
+        static let styleLearningEnabled = "styleLearningEnabled"
+        static let styleCard = "styleCard"
+        static let styleCardUpdatedAt = "styleCardUpdatedAt"
+        static let contextAwarenessEnabled = "contextAwarenessEnabled"
         static let learnedTerms = "learnedTerms"
         static let learnFromCorrections = "learnFromCorrections"
         static let promptTemplates = "promptTemplates"
@@ -185,6 +190,59 @@ final class AppSettings {
                 defaults.set(data, forKey: Key.promptTemplates)
             }
         }
+    }
+
+    /// The tone dial for AI rewrites: auto follows the target app's category
+    /// (chat casual, email neutral), or force casual/formal everywhere.
+    enum ToneStyle: String, CaseIterable, Identifiable {
+        case auto, casual, formal
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .auto: return "Auto (match the app)"
+            case .casual: return "Casual"
+            case .formal: return "Formal"
+            }
+        }
+    }
+
+    var toneStyle: ToneStyle {
+        get {
+            guard let raw = defaults.string(forKey: Key.toneStyle),
+                  let tone = ToneStyle(rawValue: raw) else { return .auto }
+            return tone
+        }
+        set { defaults.set(newValue.rawValue, forKey: Key.toneStyle) }
+    }
+
+    /// Distill a local style profile from history and condition rewrites on
+    /// it. Everything stays on this Mac.
+    var styleLearningEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.styleLearningEnabled) == nil { return true }
+            return defaults.bool(forKey: Key.styleLearningEnabled)
+        }
+        set { defaults.set(newValue, forKey: Key.styleLearningEnabled) }
+    }
+
+    var styleCard: String {
+        get { defaults.string(forKey: Key.styleCard) ?? "" }
+        set { defaults.set(newValue, forKey: Key.styleCard) }
+    }
+
+    var styleCardUpdatedAt: Double {
+        get { defaults.double(forKey: Key.styleCardUpdatedAt) }
+        set { defaults.set(newValue, forKey: Key.styleCardUpdatedAt) }
+    }
+
+    /// Read the text around the caret (via Accessibility, on-device only) to
+    /// ground names and match tone. Secure fields are always excluded.
+    var contextAwarenessEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.contextAwarenessEnabled) == nil { return true }
+            return defaults.bool(forKey: Key.contextAwarenessEnabled)
+        }
+        set { defaults.set(newValue, forKey: Key.contextAwarenessEnabled) }
     }
 
     var removeFillers: Bool {

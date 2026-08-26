@@ -95,6 +95,60 @@ struct TextCleaner {
         return String(characters)
     }
 
+    /// Fit freshly dictated text onto an existing caret position: when the
+    /// caret sits mid-sentence, the recognizer's automatic leading capital is
+    /// wrong ("send it to Him Today" pasted after "I will ") — lowercase it,
+    /// and add the joining space the user can't speak. Words that are capital
+    /// in any position ("I", "I'm", proper nouns the recognizer chose to
+    /// capitalize mid-utterance) survive: only a capital that exists purely
+    /// because it started the utterance is folded.
+    static func fitContinuation(_ text: String, after before: String, following: String = "") -> String {
+        guard let lastVisible = before.reversed().first(where: { !$0.isWhitespace }) else {
+            return text   // empty field: nothing to continue
+        }
+        var result = text
+        // A line break between the caret and the last visible character means
+        // a fresh line — "Hi Sarah,\n|" starts a new paragraph even though the
+        // previous line ended with a comma. Capitals survive there.
+        let onFreshLine = before.reversed()
+            .prefix(while: { $0.isWhitespace })
+            .contains(where: \.isNewline)
+        let midSentence = !onFreshLine && !".!?…".contains(lastVisible)
+        if midSentence, let first = result.first, first.isUppercase {
+            let firstWord = result.prefix(while: { !$0.isWhitespace && !$0.isPunctuation })
+            let keepCapital = firstWord == "I"
+                || firstWord.dropFirst().contains(where: \.isUppercase)
+                || (result.count > firstWord.count
+                    && result[result.index(result.startIndex, offsetBy: firstWord.count)] == "'"
+                    && firstWord == "I")
+            if !keepCapital {
+                result = first.lowercased() + result.dropFirst()
+            }
+        }
+        // Join with a space unless the caret already follows whitespace or an
+        // opener, or the dictation begins with closing punctuation.
+        let needsSpace = !(before.last?.isWhitespace ?? true)
+            && !"([{\u{201C}\u{2018}\"'/-".contains(before.last!)
+            && !(result.first.map { ",.;:!?)".contains($0) } ?? false)
+        if needsSpace {
+            result = " " + result
+        }
+
+        // Text continuing on the SAME line after the caret: the auto-appended
+        // period would land mid-sentence ("…ship the build. tomorrow"). Strip
+        // it, and make sure a separating space exists.
+        if let firstAfter = following.first, !firstAfter.isNewline {
+            let afterContinues = following.drop(while: { $0 == " " }).first?.isLowercase ?? false
+            if afterContinues, result.hasSuffix(".") {
+                result = String(result.dropLast())
+            }
+            if !firstAfter.isWhitespace, let lastResult = result.last, !lastResult.isWhitespace {
+                result += " "
+            }
+        }
+        return result
+    }
+
     static func ensureTerminalPunctuation(in text: String) -> String {
         guard let last = text.last else { return text }
         // Don't punctuate a deliberate line break or an empty bullet.
