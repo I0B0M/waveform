@@ -21,9 +21,11 @@ app you're typing into, and you can drag it anywhere — it remembers where.
 
 <img src="docs/images/hud-listening.png" width="560" alt="Expanded HUD with live transcript and controls">
 
-Settled words are bright, the still-changing tail is dimmed, so you can watch the
-recognizer commit as you speak. On the pill: **✕** discard · **✨** organize the
-text first (⌥-click builds a prompt) · **✓** insert exactly as spoken.
+The pill shows only the moving waveform while you speak — your words belong at
+the cursor, not in a floating box. The ribbons carry the signal: orange rides
+your voice, cyan stills if the recognizer stops understanding. On the pill:
+**✕** discard · **✨** organize the text first (⌥-click builds a prompt) ·
+**✓** insert exactly as spoken.
 
 ## Install
 

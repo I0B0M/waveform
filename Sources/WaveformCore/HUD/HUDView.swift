@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// The floating pill. Starts COMPACT (waveform only); grows into the full
-/// pill (transcript + ✕/✓ controls) the moment recognized words arrive, and
-/// the whole thing disappears when dictation ends. Draggable anywhere on its
-/// body; never steals focus.
+/// The floating pill, Wispr-style: while dictating it shows ONLY the moving
+/// waveform (plus the three small controls) — no live transcript. The words
+/// belong at the cursor, not in the pill; the ribbons' movement answers "is
+/// it hearing me / understanding me". Text appears in the pill only for
+/// states that need words: errors, "copied — press ⌘V", "undone".
+/// Draggable anywhere on its body; never steals focus.
 struct HUDView: View {
     @ObservedObject var state: HUDState
     var onFinish: (() -> Void)? = nil
@@ -45,30 +47,23 @@ struct HUDView: View {
 
     private var canPolish: Bool { LocalRewriter.isAvailable }
 
-    /// Compact until words arrive (or something needs attention). Transcripts
-    /// only grow within a session, so this never flip-flops mid-dictation.
-    private var expanded: Bool {
-        !state.transcript.isEmpty || state.phase != .listening
+    /// Words appear in the pill only when something needs saying — an error,
+    /// "copied, press ⌘V", "undone". Ordinary dictation is waveform-only.
+    private var showsMessage: Bool {
+        switch state.phase {
+        case .listening, .finalizing, .polishing: return false
+        case .noAccessibility, .notice, .error: return true
+        }
     }
 
-    // One capsule that MORPHS between the two sizes — the buttons and text are
-    // always in the tree, animating their width/height/opacity, so there is no
-    // cross-fade between two different views (which read as a flicker).
     var body: some View {
-        HStack(spacing: expanded ? 12 : 9) {
+        HStack(spacing: 10) {
             roundButton(symbol: "xmark", color: Self.pink, enabled: isActive) { onCancel?() }
-                .frame(width: expanded ? 26 : 0)
-                .opacity(expanded ? 1 : 0)
-                .scaleEffect(expanded ? 1 : 0.4)
                 .help("Cancel — discard this dictation")
 
-            Circle()
-                .fill(statusColor)
-                .frame(width: expanded ? 0 : 6, height: 6)
-                .opacity(expanded ? 0 : 1)
-                .shadow(color: statusColor.opacity(0.9), radius: 4)
-
-            VStack(spacing: expanded ? 5 : 0) {
+            // Waveform and message share one fixed stage: state changes swap
+            // opacity, never layout, so the pill never jumps.
+            ZStack {
                 WaveformView(
                     level: state.level,
                     animating: state.phase != .noAccessibility,
@@ -77,85 +72,37 @@ struct HUDView: View {
                     processingAt: state.phaseChangedAt,
                     frozenTime: frozenTime
                 )
-                .frame(height: expanded ? 34 : 30)
+                .opacity(showsMessage ? 0 : 1)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    transcriptStrip
-                    Text(statusText)
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .tracking(2.5)
-                        .foregroundStyle(statusColor.opacity(0.95))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(height: expanded ? 56 : 0)
-                .opacity(expanded ? 1 : 0)
-                // The shell morphs first; the content follows 90ms behind.
-                .animation(.easeOut(duration: 0.22).delay(expanded ? 0.09 : 0), value: expanded)
-                .clipped()
+                Text(statusText)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .tracking(1.6)
+                    .foregroundStyle(statusColor)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.7)
+                    .opacity(showsMessage ? 1 : 0)
             }
+            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36)
+            .animation(.easeOut(duration: 0.18), value: showsMessage)
 
             roundButton(symbol: "sparkles", color: Self.violet, enabled: isActive && canPolish) {
                 onPolish?(NSEvent.modifierFlags.contains(.option))
             }
-            .frame(width: expanded ? 26 : 0)
-            .opacity(expanded ? 1 : 0)
-            .scaleEffect(expanded ? 1 : 0.4)
             .help(canPolish
                 ? "Organize this, then insert  (⌥-click: turn it into a prompt)"
                 : "Needs Apple Intelligence enabled")
 
             roundButton(symbol: "checkmark", color: Self.cyan, enabled: isActive) { onFinish?() }
-                .frame(width: expanded ? 26 : 0)
-                .opacity(expanded ? 1 : 0)
-                .scaleEffect(expanded ? 1 : 0.4)
                 .help("Insert exactly as spoken")
         }
-        .padding(.horizontal, expanded ? 14 : 17)
-        .padding(.vertical, expanded ? 10 : 9)
-        .frame(width: expanded ? 340 : 190)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .frame(width: 300)
         .background(pillBackground)
         .overlay(pillRim)
-        .shadow(color: Self.violet.opacity(0.30), radius: expanded ? 22 : 16, y: 5)
-        // Bounce on arrival, none on exit: expanding overshoots a touch,
-        // collapsing is overdamped so the pill leaves without wobbling.
-        .animation(
-            expanded
-                ? .spring(response: 0.40, dampingFraction: 0.80)
-                : .spring(response: 0.45, dampingFraction: 1.0),
-            value: expanded
-        )
+        .shadow(color: .black.opacity(0.40), radius: 16, y: 5)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-    }
-
-    /// The jump-free transcript strip: fixed height, bottom-pinned, old lines
-    /// sliding up into a top fade. Word positions are never animated — only
-    /// opacity, so settled words "dry" from dim to bright without the text
-    /// ever reflowing under the reader's eyes.
-    private var transcriptStrip: some View {
-        FlowLayout(spacing: 3.5, lineSpacing: 2) {
-            ForEach(state.words) { word in
-                Text(word.text)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white)
-                    .opacity(word.settled ? 0.92 : 0.5)
-                    .animation(
-                        .easeOut(duration: 0.15)
-                            .delay(Double(word.settleBatchIndex) * 0.04),
-                        value: word.settled
-                    )
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40, alignment: .bottomLeading)
-        .clipped()
-        .mask(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black, location: 0.34),
-                    ],
-                    startPoint: .top, endPoint: .bottom
-            )
-        )
     }
 
     private var pillBackground: some View {

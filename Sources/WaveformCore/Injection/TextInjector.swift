@@ -77,15 +77,24 @@ final class TextInjector {
             return .copiedOnly
         }
 
-        if let targetBundleId,
-           NSWorkspace.shared.frontmostApplication?.bundleIdentifier != targetBundleId {
+        // Wispr's rule, adopted after fighting the alternative: text goes to
+        // wherever the cursor is NOW. If the user moved to another app while
+        // dictating, that move was intentional — chasing the app they started
+        // in costs a second and inserts where they no longer are. The one
+        // exception: when WAVEFORM ITSELF is frontmost at insert time (they
+        // started from the dashboard and never left, or clicked back into
+        // it), typing into our own window is never what they meant — re-front
+        // the original target if it was a real app.
+        let frontmostNow = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        let selfId = Bundle.main.bundleIdentifier
+        if frontmostNow == selfId, let targetBundleId, targetBundleId != selfId {
             guard await refront(bundleId: targetBundleId) else {
-                // NOT a permissions problem — say so, or the user concludes
-                // their Accessibility grant "didn't work".
                 Log.injection.error("target \(targetBundleId, privacy: .public) would not re-front — text left on clipboard")
                 putOnPasteboard(text, transient: false)
                 return .copiedFocusLost
             }
+        } else if let targetBundleId, frontmostNow != targetBundleId {
+            Log.injection.notice("cursor moved \(targetBundleId, privacy: .public) → \(frontmostNow ?? "?", privacy: .public); inserting at the current cursor")
         }
 
         // Synthesized events are silently discarded while a secure input
