@@ -33,6 +33,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate,
         }
         // Refresh the learned style card off the critical path.
         Task { await StyleProfiler.refreshIfStale() }
+        // On-demand end-to-end injection harness (logs to category "selftest").
+        InjectionSelfTestRunner.shared.register()
 
         // Opening the app should show something. Without this, double-clicking
         // Waveform.app looks like nothing happened — it's a menu-bar app, so

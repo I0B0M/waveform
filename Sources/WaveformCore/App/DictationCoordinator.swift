@@ -35,6 +35,9 @@ final class DictationCoordinator {
     /// What surrounds the caret at dictation start — read on-device via AX,
     /// used for grounding and tone, discarded with the session.
     private var fieldContext: FieldContext?
+    /// The focused element at dictation start — where the text will land,
+    /// even if the user is reading another window when they stop.
+    private var anchorElement: AXUIElement?
     private var targetAppName: String?
     private var targetBundleId: String?
     /// Set by the HUD's ✨ button: treat this dictation as a command of this
@@ -96,7 +99,7 @@ final class DictationCoordinator {
         case .recording, .starting:
             requestStop()
         case .finishing:
-            break
+            pendingStartRequested = true
         }
     }
 
@@ -117,6 +120,10 @@ final class DictationCoordinator {
     /// tap in that window must stop the session the moment it's up, not be
     /// silently discarded (which reads as "the hotkey is dead").
     private var pendingStopRequested = false
+    /// A start that arrived during .finishing (the model rewrite can run for
+    /// seconds) — begins the moment the pipeline is idle, instead of being
+    /// silently swallowed as a dead-feeling hotkey press.
+    private var pendingStartRequested = false
 
     /// Stop now if possible; if the session is still starting, arm the stop
     /// to fire the moment it finishes coming up.
@@ -154,7 +161,7 @@ final class DictationCoordinator {
                 // release should stop, same as if the session were live.
                 if !sessionStartedByPress { pressArmsStop = true }
             case .finishing:
-                break
+                pendingStartRequested = true
             }
 
         case .pressEnded(let held):
@@ -232,8 +239,16 @@ final class DictationCoordinator {
         fieldContext = AppSettings.shared.contextAwarenessEnabled
             ? injector.readFieldContext()
             : nil
+        // The insertion anchor: the exact element holding the caret right
+        // now. Captured independently of the context toggle — it's where the
+        // text lands, not what the model reads. Never anchor to a secure
+        // field.
+        anchorElement = fieldContext?.isSecure == true
+            ? nil
+            : injector.captureFocusedElement()
         sessionStartedAt = ProcessInfo.processInfo.systemUptime
 
+        hudGeneration += 1
         hud.show()
         let hudState = hud.state
         sawSpeech = false
@@ -452,12 +467,10 @@ final class DictationCoordinator {
             }
 
             // Fit onto the caret: mid-sentence, the utterance-initial capital
-            // is wrong and the joining space is missing — fix both. Only when
-            // the cursor is still in the app the context was read from: text
-            // follows the cursor, and a fit against another app's field would
-            // lowercase into an empty box.
-            if let fieldContext, !fieldContext.isSecure, !fieldContext.before.isEmpty,
-               NSWorkspace.shared.frontmostApplication?.bundleIdentifier == targetBundleId {
+            // is wrong and the joining space is missing — fix both. Insertion
+            // is anchored to the element the context was read from, so the
+            // fit is always against the right field now.
+            if let fieldContext, !fieldContext.isSecure, !fieldContext.before.isEmpty {
                 finalText = TextCleaner.fitContinuation(
                     finalText,
                     after: fieldContext.before,
@@ -468,8 +481,11 @@ final class DictationCoordinator {
             let outcome = await injector.inject(
                 finalText,
                 method: AppSettings.shared.insertionMethod,
-                targetBundleId: targetBundleId
+                targetBundleId: targetBundleId,
+                anchor: anchorElement,
+                expectedBeforeSuffix: fieldContext?.before ?? ""
             )
+            anchorElement = nil
             // Two independent secure signals gate persistence: the AX subrole
             // read at start, AND the injector's live IsSecureEventInputEnabled
             // check — the app must never store a password it visibly refused
@@ -507,6 +523,9 @@ final class DictationCoordinator {
             case .copiedSecureInput:
                 hud.state.phase = .error("Secure field — copied, press ⌘V")
                 hideHUDAfterDelay(seconds: 3)
+            case .copiedNoField:
+                hud.state.phase = .error("No text field — copied, press ⌘V")
+                hideHUDAfterDelay(seconds: 3)
             }
         } catch {
             await engine.cancelSession()
@@ -515,6 +534,10 @@ final class DictationCoordinator {
             hideHUDAfterDelay()
         }
         state = .idle
+        if pendingStartRequested {
+            pendingStartRequested = false
+            Task { await start() }
+        }
     }
 
     /// ✨ on the HUD: stop, then run the words through the on-device model
@@ -548,6 +571,7 @@ final class DictationCoordinator {
         state = .finishing
         forcedCommand = nil
         pendingStopRequested = false
+        pendingStartRequested = false
         sessionStartedByPress = false
         pressArmsStop = false
         caretDot.hide()
@@ -597,9 +621,16 @@ final class DictationCoordinator {
         hideHUDAfterDelay(seconds: 3)
     }
 
+    /// Bumped every time the HUD is shown for a new session, so a stale
+    /// delayed hide from a previous session's error pill can never fade out
+    /// the HUD of a dictation that is currently live.
+    private var hudGeneration = 0
+
     private func hideHUDAfterDelay(seconds: TimeInterval = 2) {
-        Task { [hud] in
+        let generation = hudGeneration
+        Task { [hud, weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard self?.hudGeneration == generation else { return }
             hud.hide()
         }
     }

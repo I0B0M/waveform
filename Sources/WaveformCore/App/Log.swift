@@ -11,4 +11,5 @@ enum Log {
     static let app = Logger(subsystem: "com.ibrahim.waveform", category: "app")
     static let injection = Logger(subsystem: "com.ibrahim.waveform", category: "injection")
     static let hotkey = Logger(subsystem: "com.ibrahim.waveform", category: "hotkey")
+    static let selftest = Logger(subsystem: "com.ibrahim.waveform", category: "selftest")
 }

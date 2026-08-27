@@ -96,7 +96,14 @@ final class HUDController: NSObject, NSWindowDelegate {
         if let saved = UserDefaults.standard.string(forKey: Self.positionKey) {
             let origin = NSPointFromString(saved)
             let frame = NSRect(origin: origin, size: panel.frame.size)
-            if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }) {
+            // A 1-pt intersection counts as "on screen" to intersects(), so a
+            // position saved on a since-disconnected display could come back
+            // as an unreachable sliver. Demand a usable overlap.
+            let usable = NSScreen.screens.contains { screen in
+                let overlap = screen.visibleFrame.intersection(frame)
+                return overlap.width >= 160 && overlap.height >= frame.height * 0.6
+            }
+            if usable {
                 panel.setFrameOrigin(origin)
                 return
             }

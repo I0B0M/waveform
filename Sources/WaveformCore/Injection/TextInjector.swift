@@ -24,6 +24,7 @@ final class TextInjector {
         case copiedOnly             // no permission — text left on clipboard
         case copiedFocusLost        // target app wouldn't come back — copied
         case copiedSecureInput      // secure input field — typing is discarded
+        case copiedNoField          // nothing focused accepts text — copied
     }
 
     /// How the text reaches the focused app once Accessibility is granted.
@@ -51,11 +52,91 @@ final class TextInjector {
     private struct LastInsertion {
         let text: String
         let bundleId: String?
-        let at: TimeInterval
+        /// Wall-clock time: systemUptime pauses during sleep, which would
+        /// keep the undo window alive across a closed lid overnight.
+        let at: Date
     }
 
     private var lastInsertion: LastInsertion?
     private static let undoWindow: TimeInterval = 15
+
+    /// One shared system-wide element with a BOUNDED messaging timeout: the
+    /// default is 6 seconds per AX call, and a beachballing target would
+    /// otherwise freeze the main actor (waveform, gestures, everything)
+    /// through the caret-dot poll alone. Setting it on the system-wide
+    /// element applies process-wide.
+    private let systemWide: AXUIElement = {
+        let element = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(element, 0.3)
+        return element
+    }()
+
+    /// The focused AX element at dictation start — the anchor the text
+    /// belongs to. AX writes don't require the app to be frontmost, so an
+    /// anchored insert lands at the original caret even while the user reads
+    /// something else; a dead anchor (tab closed, message sent) just errors
+    /// and the insert falls back to the focus-based path.
+    func captureFocusedElement() -> AXUIElement? {
+        guard Self.isTrusted(promptIfNeeded: false) else { return nil }
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
+        ) == .success, let focusedRef else { return nil }
+        return (focusedRef as! AXUIElement)
+    }
+
+    /// Anchor candidates, best first: the target app's live focused element,
+    /// then the element captured at start.
+    private func anchorCandidates(bundleId: String?, captured: AXUIElement?) -> [AXUIElement] {
+        var candidates: [AXUIElement] = []
+        if let bundleId,
+           bundleId != Bundle.main.bundleIdentifier,
+           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
+            let appElement = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetMessagingTimeout(appElement, 0.3)
+            var focusedRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(
+                appElement, kAXFocusedUIElementAttribute as CFString, &focusedRef
+            ) == .success, let focusedRef {
+                candidates.append(focusedRef as! AXUIElement)
+            }
+        }
+        if let captured {
+            candidates.append(captured)
+        }
+        return candidates
+    }
+
+    /// Guards a background write from the two audit-identified disasters:
+    /// replacing a selection the user made AFTER dictation started
+    /// (kAXSelectedTextAttribute means "replace selection" — collapse it to
+    /// its end first), and a stale/reused token pointing at the wrong element
+    /// (when the field's value is readable and we know what preceded the
+    /// caret, the value must still contain it).
+    private func anchoredWriteIsSafe(to element: AXUIElement, expectedSuffix: String) -> Bool {
+        // Identity check, when we have the material for it.
+        if !expectedSuffix.isEmpty {
+            var valueRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueRef) == .success,
+               let value = valueRef as? String, value.utf16.count < 200_000 {
+                let probe = String(expectedSuffix.suffix(80))
+                if !probe.isEmpty, !value.contains(probe) {
+                    Log.injection.notice("anchor identity check failed — element content changed")
+                    return false
+                }
+            }
+        }
+        // Never replace a live selection in a window the user may not be
+        // looking at: collapse it to its end so the write only inserts.
+        if let range = selectedRange(of: element), range.length > 0 {
+            var caret = CFRange(location: range.location + range.length, length: 0)
+            guard let caretValue = AXValueCreate(.cfRange, &caret),
+                  AXUIElementSetAttributeValue(
+                    element, kAXSelectedTextRangeAttribute as CFString, caretValue
+                  ) == .success else { return false }
+        }
+        return true
+    }
 
     static func isTrusted(promptIfNeeded: Bool) -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: promptIfNeeded]
@@ -68,7 +149,13 @@ final class TextInjector {
     /// would land in the wrong window or nowhere; re-front the target first,
     /// and if that fails leave the text on the clipboard rather than type it
     /// into the wrong app.
-    func inject(_ text: String, method: Method = .auto, targetBundleId: String? = nil) async -> Outcome {
+    func inject(
+        _ text: String,
+        method: Method = .auto,
+        targetBundleId: String? = nil,
+        anchor: AXUIElement? = nil,
+        expectedBeforeSuffix: String = ""
+    ) async -> Outcome {
         guard !text.isEmpty else { return .insertedDirectly }
 
         guard Self.isTrusted(promptIfNeeded: false) else {
@@ -77,24 +164,43 @@ final class TextInjector {
             return .copiedOnly
         }
 
-        // Wispr's rule, adopted after fighting the alternative: text goes to
-        // wherever the cursor is NOW. If the user moved to another app while
-        // dictating, that move was intentional — chasing the app they started
-        // in costs a second and inserts where they no longer are. The one
-        // exception: when WAVEFORM ITSELF is frontmost at insert time (they
-        // started from the dashboard and never left, or clicked back into
-        // it), typing into our own window is never what they meant — re-front
-        // the original target if it was a real app.
+        // FIRST: the anchor. The element that held the caret when dictation
+        // started is where the text belongs — and AX writes reach it without
+        // its app being frontmost, so glancing at another window while
+        // talking costs nothing. Field evidence forced this: long dictations
+        // for one app were typed into whatever the user was reading at stop
+        // time, sometimes into no field at all, silently.
+        //
+        // Resolution order (audit findings A.1/A.3): the TARGET APP's own
+        // current focused element first — Electron re-renders destroy and
+        // recreate AX nodes, so the element captured at start is often dead
+        // while the visually identical field lives on; the per-app focused
+        // element survives that and works while backgrounded. The captured
+        // element is the fallback for apps that drop focus when deactivated.
+        if method != .pasteOnly {
+            for candidate in anchorCandidates(bundleId: targetBundleId, captured: anchor) {
+                guard anchoredWriteIsSafe(to: candidate, expectedSuffix: expectedBeforeSuffix) else { continue }
+                if injectViaAccessibility(text, into: candidate) {
+                    Log.injection.notice("injected \(text.count, privacy: .public) chars via anchored AX write")
+                    lastInsertion = LastInsertion(text: text, bundleId: targetBundleId, at: Date())
+                    return .insertedDirectly
+                }
+            }
+        }
+
+        // The anchor is gone or unwritable. Text still belongs to the app the
+        // dictation STARTED in — bring it back rather than typing into
+        // whatever the user happened to be reading (typed keystrokes into a
+        // focus-less page vanish as shortcuts, with no error from macOS).
         let frontmostNow = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         let selfId = Bundle.main.bundleIdentifier
-        if frontmostNow == selfId, let targetBundleId, targetBundleId != selfId {
+        if let targetBundleId, frontmostNow != targetBundleId, targetBundleId != selfId {
+            Log.injection.notice("focus moved \(targetBundleId, privacy: .public) → \(frontmostNow ?? "?", privacy: .public); re-fronting the dictation target")
             guard await refront(bundleId: targetBundleId) else {
                 Log.injection.error("target \(targetBundleId, privacy: .public) would not re-front — text left on clipboard")
                 putOnPasteboard(text, transient: false)
                 return .copiedFocusLost
             }
-        } else if let targetBundleId, frontmostNow != targetBundleId {
-            Log.injection.notice("cursor moved \(targetBundleId, privacy: .public) → \(frontmostNow ?? "?", privacy: .public); inserting at the current cursor")
         }
 
         // Synthesized events are silently discarded while a secure input
@@ -103,6 +209,15 @@ final class TextInjector {
             Log.injection.error("secure event input active — text left on clipboard")
             putOnPasteboard(text, transient: false)
             return .copiedSecureInput
+        }
+
+        // Never type into the void: when nothing focused can take text,
+        // synthesized keystrokes become app shortcuts (space scrolls Safari)
+        // and the words are gone without an error. Copy and say so instead.
+        if method != .pasteOnly, !focusAcceptsText() {
+            Log.injection.error("no text-accepting element focused — text left on clipboard")
+            putOnPasteboard(text, transient: false)
+            return .copiedNoField
         }
 
         // Auto prefers unicode typing over ⌘V as the fallback: macOS 26.5's
@@ -128,7 +243,7 @@ final class TextInjector {
         lastInsertion = LastInsertion(
             text: text,
             bundleId: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-            at: ProcessInfo.processInfo.systemUptime
+            at: Date()
         )
         return outcome
     }
@@ -147,7 +262,7 @@ final class TextInjector {
     /// because deleting the wrong characters is far worse than not undoing.
     func undoLastInsertion() -> UndoResult {
         guard let last = lastInsertion,
-              ProcessInfo.processInfo.systemUptime - last.at <= Self.undoWindow else {
+              Date().timeIntervalSince(last.at) <= Self.undoWindow else {
             return .nothingToUndo
         }
         guard Self.isTrusted(promptIfNeeded: false),
@@ -155,7 +270,6 @@ final class TextInjector {
             return .fieldChanged
         }
 
-        let systemWide = AXUIElementCreateSystemWide()
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
@@ -229,7 +343,6 @@ final class TextInjector {
             return context
         }
 
-        let systemWide = AXUIElementCreateSystemWide()
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
@@ -280,7 +393,6 @@ final class TextInjector {
     /// nil whenever the focused app doesn't expose it; callers must not guess.
     func caretScreenRect() -> CGRect? {
         guard Self.isTrusted(promptIfNeeded: false) else { return nil }
-        let systemWide = AXUIElementCreateSystemWide()
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             systemWide,
@@ -346,7 +458,6 @@ final class TextInjector {
     /// readable (native apps). Used for selection command mode.
     func readSelectedText() -> String? {
         guard Self.isTrusted(promptIfNeeded: false) else { return nil }
-        let systemWide = AXUIElementCreateSystemWide()
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             systemWide,
@@ -366,15 +477,43 @@ final class TextInjector {
     // MARK: - AX path
 
     private func injectViaAccessibility(_ text: String) -> Bool {
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            systemWide,
-            kAXFocusedUIElementAttribute as CFString,
-            &focusedRef
-        ) == .success, let focusedRef else { return false }
-        let focused = focusedRef as! AXUIElement
+        guard let focused = captureFocusedElement() else { return false }
+        return injectViaAccessibility(text, into: focused)
+    }
 
+    /// Three-valued typing gate (audit A.5): refuse to type only on POSITIVE
+    /// evidence that the focused thing takes no text — a readable role that
+    /// is clearly not editable, with no text traits. AX-opaque targets
+    /// (remote desktops, VMs, games) expose nothing readable yet accept
+    /// keystrokes perfectly; absence of evidence must not become a refusal.
+    private func focusAcceptsText() -> Bool {
+        guard let focused = captureFocusedElement() else {
+            // Nothing focused at all is positive evidence: keystrokes would
+            // land on whatever the frontmost app does with bare keys.
+            return false
+        }
+        if selectedRange(of: focused) != nil { return true }
+        var settable = DarwinBoolean(false)
+        if AXUIElementIsAttributeSettable(focused, kAXValueAttribute as CFString, &settable) == .success,
+           settable.boolValue {
+            return true
+        }
+        // No text traits — decide by role, and only when the role is readable.
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, kAXRoleAttribute as CFString, &roleRef) == .success,
+              let role = roleRef as? String else {
+            return true   // opaque target (VM, remote desktop): type, honestly logged
+        }
+        let textRoles: Set<String> = [
+            kAXTextFieldRole as String, kAXTextAreaRole as String,
+            kAXComboBoxRole as String, "AXSearchField", "AXTerminal",
+        ]
+        if textRoles.contains(role) { return true }
+        Log.injection.notice("focused role \(role, privacy: .public) has no text traits — refusing to type")
+        return false
+    }
+
+    private func injectViaAccessibility(_ text: String, into focused: AXUIElement) -> Bool {
         // Snapshot the selection range so the write can be verified.
         let rangeBefore = selectedRange(of: focused)
 
@@ -445,9 +584,20 @@ final class TextInjector {
         let items: [[NSPasteboard.PasteboardType: Data]]
     }
 
+    /// The last snapshot of the USER's clipboard (never of our own transient
+    /// writes): rapid back-to-back dictations must not "restore" dictation #1
+    /// as if it were the user's copy.
+    private var carriedSnapshot: PasteboardSnapshot?
+
     private func injectViaPasteboard(_ text: String) async {
         let pasteboard = NSPasteboard.general
-        let snapshot = snapshotPasteboard(pasteboard)
+        let currentIsOurs = pasteboard.pasteboardItems?.contains {
+            $0.types.contains(NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+        } ?? false
+        let snapshot = currentIsOurs
+            ? (carriedSnapshot ?? PasteboardSnapshot(items: []))
+            : snapshotPasteboard(pasteboard)
+        carriedSnapshot = snapshot
 
         putOnPasteboard(text, transient: true)
         let ourChangeCount = pasteboard.changeCount
@@ -460,7 +610,10 @@ final class TextInjector {
         // wait 600ms for clipboard etiquette. Only restore if nobody else
         // wrote to the pasteboard in the meantime.
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 600_000_000)
+            // 1.5s, not 600ms: a beachballing Electron target that dequeues
+            // the synthetic ⌘V late would otherwise paste the RESTORED old
+            // clipboard — wrong content that looks intentional.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             guard let self, pasteboard.changeCount == ourChangeCount else { return }
             self.restorePasteboard(pasteboard, from: snapshot)
         }
