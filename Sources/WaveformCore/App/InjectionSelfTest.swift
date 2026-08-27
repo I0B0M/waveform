@@ -69,11 +69,12 @@ final class InjectionSelfTestRunner {
             // The AX write is synchronous; typed events need a beat to land.
             try? await Task.sleep(nanoseconds: 300_000_000)
             let landed = textView.string
-            if landed == testCase.text {
+            let onClipboard = NSPasteboard.general.string(forType: .string) == testCase.text
+            if landed == testCase.text, onClipboard {
                 passed += 1
-                Log.selftest.notice("PASS \(testCase.name, privacy: .public) via \(String(describing: outcome), privacy: .public)")
+                Log.selftest.notice("PASS \(testCase.name, privacy: .public) via \(String(describing: outcome), privacy: .public) (clipboard ✓)")
             } else {
-                Log.selftest.error("FAIL \(testCase.name, privacy: .public) via \(String(describing: outcome), privacy: .public) — landed \(landed.count, privacy: .public)/\(testCase.text.count, privacy: .public) chars")
+                Log.selftest.error("FAIL \(testCase.name, privacy: .public) via \(String(describing: outcome), privacy: .public) — landed \(landed.count, privacy: .public)/\(testCase.text.count, privacy: .public) chars, clipboard \(onClipboard, privacy: .public)")
             }
         }
 
@@ -91,8 +92,9 @@ final class InjectionSelfTestRunner {
             Log.selftest.error("FAIL rapid-fire — landed \(textView.string, privacy: .public)")
         }
 
-        // Anchored write while ANOTHER window is key: the core of the "text
-        // follows the caret I started at, not where I'm looking" guarantee.
+        // Start-anchor fallback: focus sits on a window with NO text field
+        // (the bare-Safari-page shape) — the words must fall back to the
+        // element the dictation started at, never vanish.
         textView.string = ""
         let anchorForBackground = injector.captureFocusedElement()
         let decoy = NSWindow(

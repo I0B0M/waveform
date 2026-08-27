@@ -2,7 +2,10 @@ import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
 
-/// Inserts text at the caret of whatever app is frontmost.
+/// Inserts text at the FINAL cursor — wherever the caret is when dictation
+/// stops. Moving between apps and tabs while dictating is normal; the last
+/// focus wins. Every dictation is ALSO placed on the clipboard first, so ⌘V
+/// is always the manual recovery when a target refuses insertion.
 ///
 /// Strategy 1: write `kAXSelectedTextAttribute` on the focused AX element and
 /// verify the caret actually moved (many apps return success and do nothing).
@@ -85,28 +88,6 @@ final class TextInjector {
         return (focusedRef as! AXUIElement)
     }
 
-    /// Anchor candidates, best first: the target app's live focused element,
-    /// then the element captured at start.
-    private func anchorCandidates(bundleId: String?, captured: AXUIElement?) -> [AXUIElement] {
-        var candidates: [AXUIElement] = []
-        if let bundleId,
-           bundleId != Bundle.main.bundleIdentifier,
-           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
-            let appElement = AXUIElementCreateApplication(app.processIdentifier)
-            AXUIElementSetMessagingTimeout(appElement, 0.3)
-            var focusedRef: CFTypeRef?
-            if AXUIElementCopyAttributeValue(
-                appElement, kAXFocusedUIElementAttribute as CFString, &focusedRef
-            ) == .success, let focusedRef {
-                candidates.append(focusedRef as! AXUIElement)
-            }
-        }
-        if let captured {
-            candidates.append(captured)
-        }
-        return candidates
-    }
-
     /// Guards a background write from the two audit-identified disasters:
     /// replacing a selection the user made AFTER dictation started
     /// (kAXSelectedTextAttribute means "replace selection" — collapse it to
@@ -159,64 +140,74 @@ final class TextInjector {
         guard !text.isEmpty else { return .insertedDirectly }
 
         guard Self.isTrusted(promptIfNeeded: false) else {
-            Log.injection.error("BLOCKED — Accessibility not granted; text left on clipboard")
-            putOnPasteboard(text, transient: false)
+            Log.injection.error("BLOCKED — Accessibility not granted; text is on the clipboard")
+            putOnPasteboard(text)
             return .copiedOnly
         }
 
-        // FIRST: the anchor. The element that held the caret when dictation
-        // started is where the text belongs — and AX writes reach it without
-        // its app being frontmost, so glancing at another window while
-        // talking costs nothing. Field evidence forced this: long dictations
-        // for one app were typed into whatever the user was reading at stop
-        // time, sometimes into no field at all, silently.
-        //
-        // Resolution order (audit findings A.1/A.3): the TARGET APP's own
-        // current focused element first — Electron re-renders destroy and
-        // recreate AX nodes, so the element captured at start is often dead
-        // while the visually identical field lives on; the per-app focused
-        // element survives that and works while backgrounded. The captured
-        // element is the fallback for apps that drop focus when deactivated.
-        if method != .pasteOnly {
-            for candidate in anchorCandidates(bundleId: targetBundleId, captured: anchor) {
-                guard anchoredWriteIsSafe(to: candidate, expectedSuffix: expectedBeforeSuffix) else { continue }
-                if injectViaAccessibility(text, into: candidate) {
-                    Log.injection.notice("injected \(text.count, privacy: .public) chars via anchored AX write")
-                    lastInsertion = LastInsertion(text: text, bundleId: targetBundleId, at: Date())
-                    return .insertedDirectly
-                }
-            }
+        // THE SAFETY NET, unconditionally and first: every dictation goes to
+        // the clipboard, so whatever any target does or refuses to do, ⌘V
+        // always recovers the words. This is deliberate — no snapshotting, no
+        // restoring: the dictation IS the clipboard content the user wants.
+        putOnPasteboard(text)
+
+        // Dictating from Waveform's own dashboard is the one case where the
+        // final focus is wrong by construction — hand focus back to the app
+        // the dictation started from.
+        let selfId = Bundle.main.bundleIdentifier
+        if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == selfId,
+           let targetBundleId, targetBundleId != selfId {
+            _ = await refront(bundleId: targetBundleId)
         }
 
-        // The anchor is gone or unwritable. Text still belongs to the app the
-        // dictation STARTED in — bring it back rather than typing into
-        // whatever the user happened to be reading (typed keystrokes into a
-        // focus-less page vanish as shortcuts, with no error from macOS).
-        let frontmostNow = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        let selfId = Bundle.main.bundleIdentifier
-        if let targetBundleId, frontmostNow != targetBundleId, targetBundleId != selfId {
-            Log.injection.notice("focus moved \(targetBundleId, privacy: .public) → \(frontmostNow ?? "?", privacy: .public); re-fronting the dictation target")
-            guard await refront(bundleId: targetBundleId) else {
-                Log.injection.error("target \(targetBundleId, privacy: .public) would not re-front — text left on clipboard")
-                putOnPasteboard(text, transient: false)
-                return .copiedFocusLost
+        // FINAL CURSOR FIRST: the user moves between tabs and apps while
+        // dictating on purpose; wherever the caret is at stop time is where
+        // the text belongs. The element captured at START is the fallback —
+        // an AX write reaches it without its app being frontmost, so when the
+        // final focus can't take text (a bare Safari page), the words land
+        // back at the original caret instead of being lost.
+        if method != .pasteOnly {
+            var candidates: [(element: AXUIElement, isStartAnchor: Bool)] = []
+            if let current = captureFocusedElement() {
+                candidates.append((current, false))
+            }
+            if let anchor {
+                candidates.append((anchor, true))
+            }
+            for candidate in candidates {
+                // The start anchor gets the strict guards: it may be stale
+                // (identity check) and its window may hold a selection the
+                // user made later (collapse, never replace, out of sight).
+                // The CURRENT focus gets neither — replacing a selection the
+                // user is looking at right now is what they asked for.
+                if candidate.isStartAnchor {
+                    guard anchoredWriteIsSafe(to: candidate.element, expectedSuffix: expectedBeforeSuffix) else { continue }
+                }
+                if injectViaAccessibility(text, into: candidate.element) {
+                    Log.injection.notice("injected \(text.count, privacy: .public) chars via AX (\(candidate.isStartAnchor ? "start anchor" : "final cursor", privacy: .public))")
+                    lastInsertion = LastInsertion(
+                        text: text,
+                        bundleId: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                        at: Date()
+                    )
+                    return .insertedDirectly
+                }
             }
         }
 
         // Synthesized events are silently discarded while a secure input
         // field (password box) holds the keyboard — never fake success there.
         if method != .pasteOnly, IsSecureEventInputEnabled() {
-            Log.injection.error("secure event input active — text left on clipboard")
-            putOnPasteboard(text, transient: false)
+            Log.injection.error("secure event input active — text is on the clipboard")
             return .copiedSecureInput
         }
 
         // Never type into the void: when nothing focused can take text,
         // synthesized keystrokes become app shortcuts (space scrolls Safari)
-        // and the words are gone without an error. Copy and say so instead.
+        // and the words are gone without an error. The clipboard already has
+        // them — say so instead.
         if method != .pasteOnly, !focusAcceptsText() {
-            Log.injection.error("no text-accepting element focused — text left on clipboard")
-            putOnPasteboard(text, transient: false)
+            Log.injection.error("no text-accepting element focused — text is on the clipboard")
             return .copiedNoField
         }
 
@@ -232,8 +223,7 @@ final class TextInjector {
             } else if injectViaTyping(text) {
                 outcome = .typed
             } else {
-                putOnPasteboard(text, transient: false)
-                outcome = .copiedOnly
+                outcome = .copiedOnly   // clipboard already holds the text
             }
         case .pasteOnly:
             await injectViaPasteboard(text)
@@ -580,79 +570,18 @@ final class TextInjector {
 
     // MARK: - Pasteboard path
 
-    private struct PasteboardSnapshot {
-        let items: [[NSPasteboard.PasteboardType: Data]]
-    }
-
-    /// The last snapshot of the USER's clipboard (never of our own transient
-    /// writes): rapid back-to-back dictations must not "restore" dictation #1
-    /// as if it were the user's copy.
-    private var carriedSnapshot: PasteboardSnapshot?
-
-    private func injectViaPasteboard(_ text: String) async {
-        let pasteboard = NSPasteboard.general
-        let currentIsOurs = pasteboard.pasteboardItems?.contains {
-            $0.types.contains(NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        } ?? false
-        let snapshot = currentIsOurs
-            ? (carriedSnapshot ?? PasteboardSnapshot(items: []))
-            : snapshotPasteboard(pasteboard)
-        carriedSnapshot = snapshot
-
-        putOnPasteboard(text, transient: true)
-        let ourChangeCount = pasteboard.changeCount
-
-        // Give the pasteboard server a beat before the target app reads it.
+        private func injectViaPasteboard(_ text: String) async {
+        // The dictation is already on the clipboard (the universal safety
+        // net) — just give the pasteboard server a beat, then paste. No
+        // restore: the clipboard copy is deliberate.
         try? await Task.sleep(nanoseconds: 40_000_000)
         postCommandV()
-
-        // Restore off the critical path — the caller (and the HUD) shouldn't
-        // wait 600ms for clipboard etiquette. Only restore if nobody else
-        // wrote to the pasteboard in the meantime.
-        Task { [weak self] in
-            // 1.5s, not 600ms: a beachballing Electron target that dequeues
-            // the synthetic ⌘V late would otherwise paste the RESTORED old
-            // clipboard — wrong content that looks intentional.
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard let self, pasteboard.changeCount == ourChangeCount else { return }
-            self.restorePasteboard(pasteboard, from: snapshot)
-        }
     }
 
-    private func putOnPasteboard(_ text: String, transient: Bool) {
+    private func putOnPasteboard(_ text: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        if transient {
-            // Tell clipboard managers not to record this entry.
-            pasteboard.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-        }
-    }
-
-    private func snapshotPasteboard(_ pasteboard: NSPasteboard) -> PasteboardSnapshot {
-        let items = (pasteboard.pasteboardItems ?? []).map { item in
-            var data: [NSPasteboard.PasteboardType: Data] = [:]
-            for type in item.types {
-                if let value = item.data(forType: type) {
-                    data[type] = value
-                }
-            }
-            return data
-        }
-        return PasteboardSnapshot(items: items)
-    }
-
-    private func restorePasteboard(_ pasteboard: NSPasteboard, from snapshot: PasteboardSnapshot) {
-        pasteboard.clearContents()
-        guard !snapshot.items.isEmpty else { return }
-        let items = snapshot.items.map { entry -> NSPasteboardItem in
-            let item = NSPasteboardItem()
-            for (type, data) in entry {
-                item.setData(data, forType: type)
-            }
-            return item
-        }
-        pasteboard.writeObjects(items)
     }
 
     // MARK: - Direct typing path

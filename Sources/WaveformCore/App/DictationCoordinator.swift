@@ -467,10 +467,11 @@ final class DictationCoordinator {
             }
 
             // Fit onto the caret: mid-sentence, the utterance-initial capital
-            // is wrong and the joining space is missing — fix both. Insertion
-            // is anchored to the element the context was read from, so the
-            // fit is always against the right field now.
-            if let fieldContext, !fieldContext.isSecure, !fieldContext.before.isEmpty {
+            // is wrong and the joining space is missing — fix both. Only when
+            // the final cursor is still in the app the context was read from;
+            // after a deliberate app switch the text stands alone.
+            if let fieldContext, !fieldContext.isSecure, !fieldContext.before.isEmpty,
+               NSWorkspace.shared.frontmostApplication?.bundleIdentifier == targetBundleId {
                 finalText = TextCleaner.fitContinuation(
                     finalText,
                     after: fieldContext.before,
