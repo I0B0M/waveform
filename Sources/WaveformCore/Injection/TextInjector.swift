@@ -63,14 +63,25 @@ final class TextInjector {
     private var lastInsertion: LastInsertion?
     private static let undoWindow: TimeInterval = 15
 
-    /// One shared system-wide element with a BOUNDED messaging timeout: the
-    /// default is 6 seconds per AX call, and a beachballing target would
-    /// otherwise freeze the main actor (waveform, gestures, everything)
-    /// through the caret-dot poll alone. Setting it on the system-wide
-    /// element applies process-wide.
+    /// Two AX timeout budgets, learned the hard way. A single 0.3s budget
+    /// (added to stop hung apps freezing the UI through the caret-dot poll)
+    /// made INSERTION fail intermittently: busy Electron apps routinely take
+    /// longer than 300ms to answer the focused-element query, the read came
+    /// back empty, and the app concluded "no text field" while the user sat
+    /// in one — the definition of wonky. So:
+    ///   - `systemWide` (2s): insertion-critical reads. The user is already
+    ///     waiting for their text; patience here is correctness.
+    ///   - `systemWideFast` (0.25s): the caret-dot poll only — it fires every
+    ///     400ms and must never be able to stall the main actor.
     private let systemWide: AXUIElement = {
         let element = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(element, 0.3)
+        AXUIElementSetMessagingTimeout(element, 2.0)
+        return element
+    }()
+
+    private let systemWideFast: AXUIElement = {
+        let element = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(element, 0.25)
         return element
     }()
 
@@ -80,12 +91,29 @@ final class TextInjector {
     /// something else; a dead anchor (tab closed, message sent) just errors
     /// and the insert falls back to the focus-based path.
     func captureFocusedElement() -> AXUIElement? {
-        guard Self.isTrusted(promptIfNeeded: false) else { return nil }
+        captureFocusedElementDetailed().element
+    }
+
+    /// The AXError matters: `.success`/nil-value means genuinely nothing is
+    /// focused (typing would hit app shortcuts — refuse); a timeout or error
+    /// means the app was too busy to ANSWER, which is not evidence of
+    /// anything (type; the field is probably right there).
+    private func captureFocusedElementDetailed() -> (element: AXUIElement?, error: AXError) {
+        guard Self.isTrusted(promptIfNeeded: false) else { return (nil, .apiDisabled) }
         var focusedRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        var status = AXUIElementCopyAttributeValue(
             systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
-        ) == .success, let focusedRef else { return nil }
-        return (focusedRef as! AXUIElement)
+        )
+        if status != .success || focusedRef == nil {
+            // One retry after a beat: busy apps often answer the second ask.
+            usleep(150_000)
+            focusedRef = nil
+            status = AXUIElementCopyAttributeValue(
+                systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
+            )
+        }
+        guard status == .success, let focusedRef else { return (nil, status) }
+        return ((focusedRef as! AXUIElement), .success)
     }
 
     /// Guards a background write from the two audit-identified disasters:
@@ -385,11 +413,12 @@ final class TextInjector {
         guard Self.isTrusted(promptIfNeeded: false) else { return nil }
         var focusedRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
-            systemWide,
+            systemWideFast,
             kAXFocusedUIElementAttribute as CFString,
             &focusedRef
         ) == .success, let focusedRef else { return nil }
         let focused = focusedRef as! AXUIElement
+        AXUIElementSetMessagingTimeout(focused, 0.25)
 
         var rangeRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
@@ -477,10 +506,17 @@ final class TextInjector {
     /// (remote desktops, VMs, games) expose nothing readable yet accept
     /// keystrokes perfectly; absence of evidence must not become a refusal.
     private func focusAcceptsText() -> Bool {
-        guard let focused = captureFocusedElement() else {
-            // Nothing focused at all is positive evidence: keystrokes would
-            // land on whatever the frontmost app does with bare keys.
-            return false
+        let read = captureFocusedElementDetailed()
+        guard let focused = read.element else {
+            if read.error == .noValue || read.error == .success {
+                // Nothing focused at all is positive evidence: keystrokes
+                // would land on whatever the frontmost app does with bare keys.
+                return false
+            }
+            // The app couldn't be ASKED (timeout, busy) — absence of an
+            // answer is not evidence of absence; type.
+            Log.injection.notice("focus unreadable (\(read.error.rawValue, privacy: .public)) — typing anyway")
+            return true
         }
         if selectedRange(of: focused) != nil { return true }
         var settable = DarwinBoolean(false)
