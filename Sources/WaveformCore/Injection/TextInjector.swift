@@ -98,22 +98,62 @@ final class TextInjector {
     /// focused (typing would hit app shortcuts — refuse); a timeout or error
     /// means the app was too busy to ANSWER, which is not evidence of
     /// anything (type; the field is probably right there).
+    ///
+    /// Resolution order matters even more: Electron/Chromium apps keep their
+    /// accessibility tree DISABLED until an assistive client wakes it — the
+    /// system-wide focus query then returns nothing (or just the window)
+    /// while the user sits in a perfectly good text field. So: wake the
+    /// frontmost app's tree (AXManualAccessibility, the documented Electron
+    /// switch; harmless where unsupported), ask that app directly, and only
+    /// then fall back to the system-wide query.
     private func captureFocusedElementDetailed() -> (element: AXUIElement?, error: AXError) {
         guard Self.isTrusted(promptIfNeeded: false) else { return (nil, .apiDisabled) }
+
+        var lastError: AXError = .noValue
+        if let frontmost = NSWorkspace.shared.frontmostApplication {
+            let appElement = AXUIElementCreateApplication(frontmost.processIdentifier)
+            AXUIElementSetMessagingTimeout(appElement, 2.0)
+            AXUIElementSetAttributeValue(
+                appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue
+            )
+            for attempt in 0..<2 {
+                var focusedRef: CFTypeRef?
+                let status = AXUIElementCopyAttributeValue(
+                    appElement, kAXFocusedUIElementAttribute as CFString, &focusedRef
+                )
+                if status == .success, let focusedRef {
+                    let element = focusedRef as! AXUIElement
+                    AXUIElementSetMessagingTimeout(element, 2.0)
+                    // A window is not a text target; Chromium reports it while
+                    // the tree is still waking. Retry once, then let the
+                    // system-wide path have a look.
+                    if Self.role(of: element) == (kAXWindowRole as String), attempt == 0 {
+                        usleep(200_000)
+                        continue
+                    }
+                    return (element, .success)
+                }
+                lastError = status
+                // Freshly woken trees need a beat to build.
+                usleep(200_000)
+            }
+        }
+
         var focusedRef: CFTypeRef?
-        var status = AXUIElementCopyAttributeValue(
+        let status = AXUIElementCopyAttributeValue(
             systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
         )
-        if status != .success || focusedRef == nil {
-            // One retry after a beat: busy apps often answer the second ask.
-            usleep(150_000)
-            focusedRef = nil
-            status = AXUIElementCopyAttributeValue(
-                systemWide, kAXFocusedUIElementAttribute as CFString, &focusedRef
-            )
+        guard status == .success, let focusedRef else {
+            return (nil, status == .success ? lastError : status)
         }
-        guard status == .success, let focusedRef else { return (nil, status) }
         return ((focusedRef as! AXUIElement), .success)
+    }
+
+    private static func role(of element: AXUIElement) -> String? {
+        var roleRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success
+        else { return nil }
+        return roleRef as? String
     }
 
     /// Guards a background write from the two audit-identified disasters:
@@ -533,6 +573,11 @@ final class TextInjector {
         let textRoles: Set<String> = [
             kAXTextFieldRole as String, kAXTextAreaRole as String,
             kAXComboBoxRole as String, "AXSearchField", "AXTerminal",
+            // A FOCUSED web area is Electron/browser shorthand for "the caret
+            // is in web content" (contenteditable composers report this way);
+            // refusing here turned every Electron dictation into a clipboard
+            // pill. A window with focus, by contrast, really is no-field.
+            "AXWebArea",
         ]
         if textRoles.contains(role) { return true }
         Log.injection.notice("focused role \(role, privacy: .public) has no text traits — refusing to type")
