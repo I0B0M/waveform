@@ -198,19 +198,31 @@ final class LocalRewriter {
             + (material.isEmpty ? "" : "\n\nSource material:\n\(material)")
             + context
 
-        // Opt-in bigger brain: the user's own Claude API key, compose only.
-        // Any failure falls straight back to the on-device model — the
-        // feature degrades, never breaks.
-        if await AppSettings.shared.aiBrain == .claudeAPI, CloudBrain.isConfigured {
+        // Opt-in bigger brain: the user's own key or their own local model
+        // server, compose only. Any failure falls straight back to the
+        // on-device model — the feature degrades, never breaks.
+        let brain = await AppSettings.shared.aiBrain
+        if brain == .claudeAPI && CloudBrain.isConfigured
+            || brain == .custom {
             do {
-                let text = try await CloudBrain.compose(
-                    instructions: Self.composeInstructions,
-                    prompt: prompt
-                )
+                let text: String
+                if brain == .claudeAPI {
+                    text = try await CloudBrain.compose(
+                        instructions: Self.composeInstructions,
+                        prompt: prompt
+                    )
+                } else {
+                    text = try await CloudBrain.composeOpenAICompatible(
+                        baseURL: await AppSettings.shared.compatBaseURL,
+                        model: await AppSettings.shared.compatModel,
+                        instructions: Self.composeInstructions,
+                        prompt: prompt
+                    )
+                }
                 let lowered = text.lowercased()
                 let preambles = ["here is", "here's", "sure,", "sure!", "certainly", "as an ai"]
                 if !preambles.contains(where: { lowered.hasPrefix($0) }), text.count < 4000 {
-                    Log.app.notice("compose served by Claude API")
+                    Log.app.notice("compose served by \(brain == .claudeAPI ? "Claude API" : "custom endpoint", privacy: .public)")
                     return text
                 }
             } catch {

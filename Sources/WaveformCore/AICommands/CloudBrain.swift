@@ -33,11 +33,13 @@ enum CloudBrain {
 
     private static let service = "com.ibrahim.waveform"
     private static let account = "anthropic-api-key"
+    private static let compatAccount = "openai-compat-api-key"
 
     static var isConfigured: Bool { loadKey() != nil }
+    static var isCompatKeyConfigured: Bool { loadKey(account: compatAccount) != nil }
 
-    static func saveKey(_ key: String) {
-        deleteKey()
+    static func saveKey(_ key: String, account: String = account) {
+        deleteKey(account: account)
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { return }
         let attributes: [String: Any] = [
@@ -49,7 +51,10 @@ enum CloudBrain {
         SecItemAdd(attributes as CFDictionary, nil)
     }
 
-    static func deleteKey() {
+    static func saveCompatKey(_ key: String) { saveKey(key, account: compatAccount) }
+    static func deleteCompatKey() { deleteKey(account: compatAccount) }
+
+    static func deleteKey(account: String = account) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -58,7 +63,7 @@ enum CloudBrain {
         SecItemDelete(query as CFDictionary)
     }
 
-    static func loadKey() -> String? {
+    static func loadKey(account: String = account) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -124,6 +129,59 @@ enum CloudBrain {
             .joined()
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw CloudError.emptyReply }
+        return text
+    }
+
+    // MARK: - OpenAI-compatible endpoint (any provider, and local runners)
+
+    /// One protocol covers "any API key" AND "local models you download":
+    /// OpenAI, Gemini, Kimi/Moonshot, Groq, OpenRouter, and the local runners
+    /// (Ollama, LM Studio) all serve /chat/completions. Local endpoints need
+    /// no key at all — Llama or Kimi running in Ollama is just a base URL.
+    static func composeOpenAICompatible(
+        baseURL: String,
+        model: String,
+        instructions: String,
+        prompt: String
+    ) async throws -> String {
+        let trimmedBase = baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        guard !trimmedBase.isEmpty, !model.isEmpty,
+              let url = URL(string: trimmedBase + "/chat/completions") else {
+            throw CloudError.badStatus(0, "endpoint or model not configured")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let key = loadKey(account: compatAccount) {
+            request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        }
+
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 1024,
+            "messages": [
+                ["role": "system", "content": instructions],
+                ["role": "user", "content": prompt],
+            ],
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw CloudError.emptyReply }
+        guard http.statusCode == 200 else {
+            let bodyText = String(data: data.prefix(300), encoding: .utf8) ?? ""
+            throw CloudError.badStatus(http.statusCode, bodyText)
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let choices = json["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let text = (message["content"] as? String)?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            throw CloudError.emptyReply
+        }
         return text
     }
 }

@@ -26,6 +26,8 @@ final class AppSettings {
         static let streamingEnabled = "streamingEnabled"
         static let finishCommandsEnabled = "finishCommandsEnabled"
         static let aiBrain = "aiBrain"
+        static let compatBaseURL = "compatBaseURL"
+        static let compatModel = "compatModel"
         static let learnedTerms = "learnedTerms"
         static let learnFromCorrections = "learnFromCorrections"
         static let promptTemplates = "promptTemplates"
@@ -263,14 +265,28 @@ final class AppSettings {
     /// key from the Keychain, and receives text only (instruction, selection,
     /// context) — never audio, never history.
     enum AIBrain: String, CaseIterable, Identifiable {
-        case onDevice, claudeAPI
+        case onDevice, claudeAPI, custom
         var id: String { rawValue }
         var label: String {
             switch self {
             case .onDevice: return "Apple on-device (private)"
             case .claudeAPI: return "Claude API (your key)"
+            case .custom: return "Custom / local (OpenAI-compatible)"
             }
         }
+    }
+
+    /// OpenAI-compatible endpoint: covers any provider (OpenAI, Gemini,
+    /// Kimi/Moonshot, Groq, OpenRouter) AND local runners (Ollama, LM
+    /// Studio) — a local Llama is just a base URL with no key.
+    var compatBaseURL: String {
+        get { defaults.string(forKey: Key.compatBaseURL) ?? "" }
+        set { defaults.set(newValue, forKey: Key.compatBaseURL) }
+    }
+
+    var compatModel: String {
+        get { defaults.string(forKey: Key.compatModel) ?? "" }
+        set { defaults.set(newValue, forKey: Key.compatModel) }
     }
 
     var aiBrain: AIBrain {

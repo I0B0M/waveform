@@ -30,5 +30,10 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Waveform listens only while dictation is active and transcribes your voice entirely on this Mac. Audio never leaves the device.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

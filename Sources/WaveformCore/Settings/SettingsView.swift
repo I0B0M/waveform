@@ -21,6 +21,19 @@ struct SettingsView: View {
     @State private var aiBrain: AppSettings.AIBrain = AppSettings.shared.aiBrain
     @State private var apiKeyDraft: String = ""
     @State private var apiKeyConfigured: Bool = CloudBrain.isConfigured
+    @State private var compatBaseURL: String = AppSettings.shared.compatBaseURL
+    @State private var compatModel: String = AppSettings.shared.compatModel
+    @State private var compatKeyDraft: String = ""
+    @State private var compatKeyConfigured: Bool = CloudBrain.isCompatKeyConfigured
+
+    /// One-click endpoint presets: local runners need no key at all.
+    private static let endpointPresets: [(name: String, url: String, model: String)] = [
+        ("Ollama (local)", "http://localhost:11434/v1", "llama3.2"),
+        ("LM Studio (local)", "http://localhost:1234/v1", ""),
+        ("OpenAI", "https://api.openai.com/v1", "gpt-5.2"),
+        ("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
+        ("Kimi / Moonshot", "https://api.moonshot.ai/v1", "kimi-k2"),
+    ]
 
     private static let silenceChoices: [(label: String, value: Double)] = [
         ("Off (manual only)", 0), ("1.5 seconds", 1.5), ("2 seconds", 2),
@@ -157,7 +170,7 @@ struct SettingsView: View {
                     pickerRow("AI-mode brain", selection: $aiBrain, options: AppSettings.AIBrain.allCases, label: \.label) { newValue in
                         AppSettings.shared.aiBrain = newValue
                     }
-                    caption("Applies to AI mode (double-tap fn) and reply-to-selection only. With your own Claude API key, those composes run on a larger model — sending TEXT only: your spoken instruction, the selection, and the context around your cursor. Audio and ordinary dictation never leave this Mac. Key is stored in the macOS Keychain.")
+                    caption("Applies to AI mode (double-tap fn) and reply-to-selection only. On-device is the default. The other brains send TEXT only — your spoken instruction, the selection, and the context around your cursor. Audio and ordinary dictation never leave this Mac; a LOCAL endpoint (Ollama, LM Studio) keeps even that on your machine. Keys are stored in the macOS Keychain.")
                     if aiBrain == .claudeAPI {
                         HStack(spacing: 8) {
                             SecureField("sk-ant-…", text: $apiKeyDraft)
@@ -179,6 +192,54 @@ struct SettingsView: View {
                         caption(apiKeyConfigured
                             ? "Key saved in the Keychain ✓ — AI mode composes will use the Claude API."
                             : "No key saved — composes stay on-device until one is added.")
+                    }
+                    if aiBrain == .custom {
+                        HStack(spacing: 8) {
+                            rowTitle("Preset")
+                            Spacer()
+                            Menu("Fill from preset…") {
+                                ForEach(Self.endpointPresets, id: \.name) { preset in
+                                    Button(preset.name) {
+                                        compatBaseURL = preset.url
+                                        if !preset.model.isEmpty { compatModel = preset.model }
+                                        AppSettings.shared.compatBaseURL = compatBaseURL
+                                        AppSettings.shared.compatModel = compatModel
+                                    }
+                                }
+                            }
+                            .fixedSize()
+                        }
+                        HStack(spacing: 8) {
+                            TextField("Base URL — e.g. http://localhost:11434/v1", text: $compatBaseURL)
+                                .textFieldStyle(.roundedBorder)
+                                .onChange(of: compatBaseURL) { _, newValue in
+                                    AppSettings.shared.compatBaseURL = newValue
+                                }
+                            TextField("Model — e.g. llama3.2", text: $compatModel)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 170)
+                                .onChange(of: compatModel) { _, newValue in
+                                    AppSettings.shared.compatModel = newValue
+                                }
+                        }
+                        HStack(spacing: 8) {
+                            SecureField("API key (leave empty for local endpoints)", text: $compatKeyDraft)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 280)
+                            Button(compatKeyConfigured ? "Replace" : "Save") {
+                                CloudBrain.saveCompatKey(compatKeyDraft)
+                                compatKeyDraft = ""
+                                compatKeyConfigured = CloudBrain.isCompatKeyConfigured
+                            }
+                            .disabled(compatKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                            if compatKeyConfigured {
+                                Button("Remove", role: .destructive) {
+                                    CloudBrain.deleteCompatKey()
+                                    compatKeyConfigured = false
+                                }
+                            }
+                        }
+                        caption("Works with any OpenAI-compatible endpoint: local models you download (Ollama, LM Studio — pick a preset, no key needed) or any provider's API (OpenAI, Gemini, Kimi, Groq, OpenRouter) with your key.")
                     }
                 }
             }
