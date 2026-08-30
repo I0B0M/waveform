@@ -101,13 +101,15 @@ struct HUDView: View {
                 roundButton(symbol: "checkmark", color: DashboardView.ink, enabled: isActive) { onFinish?() }
                     .help("Insert exactly as spoken")
             }
-            .frame(width: hovering ? 80 : 0)
+            // Three 26pt buttons + two 7pt gaps = exactly 92pt: anything
+            // narrower centers the row and clips half a button off each end.
+            .frame(width: hovering ? 92 : 0, alignment: .leading)
             .opacity(hovering ? 1 : 0)
             .clipped()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .frame(width: hovering ? 300 : 216)
+        .frame(width: hovering ? 318 : 216)
         .background(pillBackground)
         .overlay(pillRim)
         .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
