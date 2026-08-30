@@ -39,9 +39,12 @@ INSTALL
      Accessibility is what lets dictated text land in other apps.
 
 USING IT
-  Default hotkey is Cmd-X (it replaces Cut while running — change it in
-  Settings: Option-Space, Ctrl-Option-D, F19, or double-tap Control).
-  Speak, stop talking, and the cleaned text appears at your cursor.
+  Default hotkey is the fn (Globe) key: tap to start, tap again to stop —
+  or hold it 2+ seconds to push-to-talk (release inserts immediately).
+  If macOS also opens the emoji picker on fn, the Waveform menu-bar icon
+  offers a one-click fix. Other presets live in Settings.
+  Speak, stop, and the cleaned text appears at your cursor — and it is
+  always on the clipboard too, so Cmd-V recovers it anywhere.
   On the HUD: sparkles = organize the text first, checkmark = insert as
   spoken, x = discard.
 

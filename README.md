@@ -8,6 +8,11 @@
 Transcription, cleanup, and AI rewriting all run **on-device** — no cloud, no account,
 no audio ever leaves your Mac.
 
+<br>
+
+[![Download](https://img.shields.io/github/v/release/I0B0M/waveform?label=Download%20DMG&style=for-the-badge&color=B833FF)](https://github.com/I0B0M/waveform/releases/latest)
+[![macOS 26+](https://img.shields.io/badge/macOS-26%2B%20Apple%20Silicon-1a1a2e?style=for-the-badge&logo=apple)](https://github.com/I0B0M/waveform/releases/latest)
+
 </div>
 
 **Flow:** hotkey → HUD appears → speak → live transcription → stop talking (it
@@ -29,8 +34,8 @@ your voice, cyan stills if the recognizer stops understanding. On the pill:
 
 ## Install
 
-**Just want to use it?** Get `Waveform-<version>.dmg`, drag the app to
-Applications, then **right-click it → Open** the first time. That right-click is
+**Just want to use it?** [**Download the latest DMG**](https://github.com/I0B0M/waveform/releases/latest),
+drag the app to Applications, then **right-click it → Open** the first time. That right-click is
 required because this build is signed with a locally-generated certificate
 rather than a paid Apple Developer ID; macOS shows a warning it won't show
 again. Then press the hotkey once and grant **Microphone** and **Accessibility**.
