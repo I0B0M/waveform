@@ -16,10 +16,14 @@ struct HUDView: View {
     /// Fixed time for deterministic offscreen snapshots.
     var frozenTime: Double? = nil
 
-    private static let orange = Color(red: 1.00, green: 0.45, blue: 0.10)
-    private static let violet = Color(red: 0.72, green: 0.20, blue: 1.00)
-    private static let cyan = Color(red: 0.16, green: 0.85, blue: 1.00)
-    private static let pink = Color(red: 1.00, green: 0.18, blue: 0.57)
+    // The dashboard's quiet system, worn by the pill: color belongs to the
+    // ribbons; the chrome stays hairline-and-card like every other surface.
+    private static let violet = DashboardView.violet
+    private static let cyan = DashboardView.cyan
+    private static let card = Color(red: 0.067, green: 0.039, blue: 0.122).opacity(0.96)
+    private static let line = DashboardView.line
+    private static let ink2 = DashboardView.ink2
+    private static let ink3 = DashboardView.ink3
 
     private var statusText: String {
         switch state.phase {
@@ -34,12 +38,10 @@ struct HUDView: View {
 
     private var statusColor: Color {
         switch state.phase {
-        case .listening: return Self.orange
-        case .finalizing: return Self.cyan
-        case .polishing: return Self.violet
+        case .listening, .finalizing, .polishing: return Self.ink3
         case .noAccessibility: return Color(red: 1.00, green: 0.80, blue: 0.20)
         case .notice: return Self.cyan
-        case .error: return Color(red: 1.00, green: 0.30, blue: 0.30)
+        case .error: return Color(red: 1.00, green: 0.36, blue: 0.36)
         }
     }
 
@@ -58,7 +60,7 @@ struct HUDView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            roundButton(symbol: "xmark", color: Self.pink, enabled: isActive) { onCancel?() }
+            roundButton(symbol: "xmark", color: Self.ink3, enabled: isActive) { onCancel?() }
                 .help("Cancel — discard this dictation")
 
             // Waveform and message share one fixed stage: state changes swap
@@ -93,7 +95,7 @@ struct HUDView: View {
                 ? "Organize this, then insert  (⌥-click: turn it into a prompt)"
                 : "Needs Apple Intelligence enabled")
 
-            roundButton(symbol: "checkmark", color: Self.cyan, enabled: isActive) { onFinish?() }
+            roundButton(symbol: "checkmark", color: DashboardView.ink, enabled: isActive) { onFinish?() }
                 .help("Insert exactly as spoken")
         }
         .padding(.horizontal, 14)
@@ -101,30 +103,33 @@ struct HUDView: View {
         .frame(width: 300)
         .background(pillBackground)
         .overlay(pillRim)
-        .shadow(color: .black.opacity(0.40), radius: 16, y: 5)
+        .overlay(alignment: .bottom) {
+            // The dashboard's spectrum rail, worn as a hem: the pill's one
+            // piece of chrome jewelry.
+            LinearGradient(
+                colors: [
+                    DashboardView.orange, DashboardView.pink,
+                    DashboardView.violet, DashboardView.cyan,
+                ],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(width: 132, height: 2)
+            .clipShape(Capsule())
+            .offset(y: -5)
+            .opacity(0.85)
+        }
+        .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
     private var pillBackground: some View {
         Capsule(style: .continuous)
-            .fill(Color(red: 0.03, green: 0.01, blue: 0.09).opacity(0.94))
+            .fill(Self.card)
     }
 
     private var pillRim: some View {
         Capsule(style: .continuous)
-            .strokeBorder(
-                LinearGradient(
-                    colors: [
-                        Self.orange.opacity(0.6),
-                        Self.pink.opacity(0.5),
-                        Self.violet.opacity(0.6),
-                        Self.cyan.opacity(0.6),
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
-                lineWidth: 1.2
-            )
+            .strokeBorder(Self.line, lineWidth: 1)
     }
 
     private func roundButton(
@@ -135,11 +140,11 @@ struct HUDView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(enabled ? color : Color.white.opacity(0.18))
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(enabled ? color : Self.ink3.opacity(0.4))
                 .frame(width: 26, height: 26)
-                .background(Circle().fill(Color.white.opacity(enabled ? 0.08 : 0.03)))
-                .overlay(Circle().strokeBorder(color.opacity(enabled ? 0.5 : 0.1), lineWidth: 1))
+                .background(Circle().fill(Color.white.opacity(enabled ? 0.05 : 0.02)))
+                .overlay(Circle().strokeBorder(Self.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
