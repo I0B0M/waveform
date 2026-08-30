@@ -122,7 +122,7 @@ public enum DocsRenderer {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            HUDView(state: state, frozenTime: 1.85)
+            HUDView(state: state, frozenTime: 1.85, previewHovered: transcript)
                 .padding(30)
         }
     }

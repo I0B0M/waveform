@@ -24,7 +24,7 @@ app you're typing into, and you can drag it anywhere — it remembers where.
 
 <img src="docs/images/hud-compact.png" width="420" alt="Compact HUD: waveform only">
 
-<img src="docs/images/hud-listening.png" width="560" alt="Expanded HUD with live transcript and controls">
+<img src="docs/images/hud-listening.png" width="560" alt="Hovering the pill reveals the controls: discard, organize, insert">
 
 The pill shows only the moving waveform while you speak — your words belong at
 the cursor, not in a floating box. The ribbons carry the signal: orange rides

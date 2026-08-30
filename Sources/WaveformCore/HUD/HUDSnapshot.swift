@@ -52,7 +52,7 @@ public enum HUDSnapshot {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            HUDView(state: state, frozenTime: 1.85)
+            HUDView(state: state, frozenTime: 1.85, previewHovered: true)
                 .padding(40)
         }
         .frame(width: 560, height: 220)

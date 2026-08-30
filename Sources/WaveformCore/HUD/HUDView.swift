@@ -16,6 +16,9 @@ struct HUDView: View {
     var onPolish: ((_ promptMode: Bool) -> Void)? = nil
     /// Fixed time for deterministic offscreen snapshots.
     var frozenTime: Double? = nil
+    /// Snapshots only: render the hovered state (controls out) — @State can't
+    /// be set from outside, and the docs must show what a hover reveals.
+    var previewHovered: Bool = false
 
     // The dashboard's quiet system, worn by the pill: color belongs to the
     // ribbons; the chrome stays hairline-and-card like every other surface.
@@ -103,13 +106,13 @@ struct HUDView: View {
             }
             // Three 26pt buttons + two 7pt gaps = exactly 92pt: anything
             // narrower centers the row and clips half a button off each end.
-            .frame(width: hovering ? 92 : 0, alignment: .leading)
-            .opacity(hovering ? 1 : 0)
+            .frame(width: (hovering || previewHovered) ? 92 : 0, alignment: .leading)
+            .opacity((hovering || previewHovered) ? 1 : 0)
             .clipped()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .frame(width: hovering ? 318 : 216)
+        .frame(width: (hovering || previewHovered) ? 318 : 216)
         .background(pillBackground)
         .overlay(pillRim)
         .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
