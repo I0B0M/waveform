@@ -25,6 +25,7 @@ final class AppSettings {
         static let contextAwarenessEnabled = "contextAwarenessEnabled"
         static let streamingEnabled = "streamingEnabled"
         static let finishCommandsEnabled = "finishCommandsEnabled"
+        static let aiBrain = "aiBrain"
         static let learnedTerms = "learnedTerms"
         static let learnFromCorrections = "learnFromCorrections"
         static let promptTemplates = "promptTemplates"
@@ -255,6 +256,30 @@ final class AppSettings {
             return defaults.bool(forKey: Key.streamingEnabled)
         }
         set { defaults.set(newValue, forKey: Key.streamingEnabled) }
+    }
+
+    /// Which model composes in AI mode. On-device is the default and the
+    /// promise; the Claude API option is strictly opt-in, uses the USER'S OWN
+    /// key from the Keychain, and receives text only (instruction, selection,
+    /// context) — never audio, never history.
+    enum AIBrain: String, CaseIterable, Identifiable {
+        case onDevice, claudeAPI
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .onDevice: return "Apple on-device (private)"
+            case .claudeAPI: return "Claude API (your key)"
+            }
+        }
+    }
+
+    var aiBrain: AIBrain {
+        get {
+            guard let raw = defaults.string(forKey: Key.aiBrain),
+                  let brain = AIBrain(rawValue: raw) else { return .onDevice }
+            return brain
+        }
+        set { defaults.set(newValue.rawValue, forKey: Key.aiBrain) }
     }
 
     /// "Send it" / "scratch that" spoken at the end of a dictation act as

@@ -194,10 +194,31 @@ final class LocalRewriter {
     /// plus optional source material. Nil = the caller should explain rather
     /// than insert.
     func compose(instruction: String, material: String, context: String = "") async -> String? {
-        guard Self.isAvailable else { return nil }
         let prompt = "Instruction: \(instruction)"
             + (material.isEmpty ? "" : "\n\nSource material:\n\(material)")
             + context
+
+        // Opt-in bigger brain: the user's own Claude API key, compose only.
+        // Any failure falls straight back to the on-device model — the
+        // feature degrades, never breaks.
+        if await AppSettings.shared.aiBrain == .claudeAPI, CloudBrain.isConfigured {
+            do {
+                let text = try await CloudBrain.compose(
+                    instructions: Self.composeInstructions,
+                    prompt: prompt
+                )
+                let lowered = text.lowercased()
+                let preambles = ["here is", "here's", "sure,", "sure!", "certainly", "as an ai"]
+                if !preambles.contains(where: { lowered.hasPrefix($0) }), text.count < 4000 {
+                    Log.app.notice("compose served by Claude API")
+                    return text
+                }
+            } catch {
+                Log.app.error("cloud compose failed, falling back on-device: \(String(describing: error), privacy: .public)")
+            }
+        }
+
+        guard Self.isAvailable else { return nil }
         do {
             let output: String = try await withThrowingTimeout(seconds: 15) {
                 let session = LanguageModelSession(instructions: Self.composeInstructions)

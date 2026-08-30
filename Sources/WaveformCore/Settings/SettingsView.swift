@@ -18,6 +18,9 @@ struct SettingsView: View {
     @State private var styleLearning: Bool = AppSettings.shared.styleLearningEnabled
     @State private var streaming: Bool = AppSettings.shared.streamingEnabled
     @State private var finishCommands: Bool = AppSettings.shared.finishCommandsEnabled
+    @State private var aiBrain: AppSettings.AIBrain = AppSettings.shared.aiBrain
+    @State private var apiKeyDraft: String = ""
+    @State private var apiKeyConfigured: Bool = CloudBrain.isConfigured
 
     private static let silenceChoices: [(label: String, value: Double)] = [
         ("Off (manual only)", 0), ("1.5 seconds", 1.5), ("2 seconds", 2),
@@ -150,6 +153,33 @@ struct SettingsView: View {
                         AppSettings.shared.aiCommandsEnabled = $0
                     }
                     caption("Start with “make this better, …” or say a //command and the rest is restructured by Apple's local model before inserting. Nothing goes to the cloud.")
+                    rule
+                    pickerRow("AI-mode brain", selection: $aiBrain, options: AppSettings.AIBrain.allCases, label: \.label) { newValue in
+                        AppSettings.shared.aiBrain = newValue
+                    }
+                    caption("Applies to AI mode (double-tap fn) and reply-to-selection only. With your own Claude API key, those composes run on a larger model — sending TEXT only: your spoken instruction, the selection, and the context around your cursor. Audio and ordinary dictation never leave this Mac. Key is stored in the macOS Keychain.")
+                    if aiBrain == .claudeAPI {
+                        HStack(spacing: 8) {
+                            SecureField("sk-ant-…", text: $apiKeyDraft)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 260)
+                            Button(apiKeyConfigured ? "Replace" : "Save") {
+                                CloudBrain.saveKey(apiKeyDraft)
+                                apiKeyDraft = ""
+                                apiKeyConfigured = CloudBrain.isConfigured
+                            }
+                            .disabled(apiKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                            if apiKeyConfigured {
+                                Button("Remove", role: .destructive) {
+                                    CloudBrain.deleteKey()
+                                    apiKeyConfigured = false
+                                }
+                            }
+                        }
+                        caption(apiKeyConfigured
+                            ? "Key saved in the Keychain ✓ — AI mode composes will use the Claude API."
+                            : "No key saved — composes stay on-device until one is added.")
+                    }
                 }
             }
             .frame(maxWidth: 600, alignment: .leading)
