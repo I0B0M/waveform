@@ -24,6 +24,7 @@ final class DictationCoordinator {
     private let rewriter = LocalRewriter()
     private let learner = CorrectionLearner()
     private let caretDot = CaretDotController()
+    private let streamer = StreamingInserter()
 
     private var enginePrepared = false
     private var prepareFailure: String?
@@ -276,6 +277,13 @@ final class DictationCoordinator {
                             finalized: update.finalized,
                             volatile: update.volatile
                         )
+                        if let self, self.streamer.isActive {
+                            var live = update.display
+                            if let context = self.fieldContext, !context.before.isEmpty {
+                                live = TextCleaner.fitContinuation(live, after: context.before)
+                            }
+                            self.streamer.update(live)
+                        }
                         // The recognizer producing new text is the strongest
                         // "still speaking" signal there is — and it drives
                         // the cyan "understanding" ribbon.
@@ -324,6 +332,16 @@ final class DictationCoordinator {
             }
             try audio.start(targetFormat: format)
             state = .recording
+            // Live streaming: words land at the caret as they're recognized.
+            // begin() failing just means this field can't take verified live
+            // writes — the classic insert-at-stop path takes over untouched.
+            if AppSettings.shared.streamingEnabled,
+               fieldContext?.isSecure != true,
+               let anchorElement {
+                if streamer.begin(element: anchorElement) {
+                    Log.injection.notice("streaming session started")
+                }
+            }
             caretDot.show { [injector] in injector.caretScreenRect() }
             startSilenceWatchdog()
             if pendingStopRequested {
@@ -366,6 +384,7 @@ final class DictationCoordinator {
             let cleaned = cleaner.clean(spoken)
 
             if cleaned.isEmpty {
+                streamer.abort()
                 hud.hide()
                 state = .idle
                 return
@@ -479,13 +498,38 @@ final class DictationCoordinator {
                 )
             }
 
-            let outcome = await injector.inject(
-                finalText,
-                method: AppSettings.shared.insertionMethod,
-                targetBundleId: targetBundleId,
-                anchor: anchorElement,
-                expectedBeforeSuffix: fieldContext?.before ?? ""
-            )
+            // Streamed sessions finish with one in-place replace of the live
+            // text; a frozen stream (the user typed mid-dictation) must never
+            // be topped with a second, duplicate insert — the clipboard pill
+            // is the honest fallback there.
+            let outcome: TextInjector.Outcome
+            let streamedSomething = streamer.hasStreamedText
+            if streamer.isActive || streamedSomething {
+                injector.copyToClipboard(finalText)
+                if streamer.finish(with: finalText) {
+                    Log.injection.notice("streamed session finished in place (\(finalText.count, privacy: .public) chars)")
+                    outcome = .insertedDirectly
+                } else if streamedSomething {
+                    Log.injection.error("stream frozen mid-session — final text on the clipboard")
+                    outcome = .copiedFocusLost
+                } else {
+                    outcome = await injector.inject(
+                        finalText,
+                        method: AppSettings.shared.insertionMethod,
+                        targetBundleId: targetBundleId,
+                        anchor: anchorElement,
+                        expectedBeforeSuffix: fieldContext?.before ?? ""
+                    )
+                }
+            } else {
+                outcome = await injector.inject(
+                    finalText,
+                    method: AppSettings.shared.insertionMethod,
+                    targetBundleId: targetBundleId,
+                    anchor: anchorElement,
+                    expectedBeforeSuffix: fieldContext?.before ?? ""
+                )
+            }
             anchorElement = nil
             // Two independent secure signals gate persistence: the AX subrole
             // read at start, AND the injector's live IsSecureEventInputEnabled
@@ -529,6 +573,7 @@ final class DictationCoordinator {
                 hideHUDAfterDelay(seconds: 3)
             }
         } catch {
+            streamer.abort()
             await engine.cancelSession()
             hud.state.phase = .error("Transcription failed")
             Log.app.error("finish failed: \(String(describing: error), privacy: .public)")
@@ -575,6 +620,7 @@ final class DictationCoordinator {
         pendingStartRequested = false
         sessionStartedByPress = false
         pressArmsStop = false
+        streamer.abort()
         caretDot.hide()
         stopSilenceWatchdog()
         audio.stop()

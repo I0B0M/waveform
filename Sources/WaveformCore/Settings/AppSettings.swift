@@ -23,6 +23,7 @@ final class AppSettings {
         static let styleCard = "styleCard"
         static let styleCardUpdatedAt = "styleCardUpdatedAt"
         static let contextAwarenessEnabled = "contextAwarenessEnabled"
+        static let streamingEnabled = "streamingEnabled"
         static let learnedTerms = "learnedTerms"
         static let learnFromCorrections = "learnFromCorrections"
         static let promptTemplates = "promptTemplates"
@@ -243,6 +244,16 @@ final class AppSettings {
             return defaults.bool(forKey: Key.contextAwarenessEnabled)
         }
         set { defaults.set(newValue, forKey: Key.contextAwarenessEnabled) }
+    }
+
+    /// Words appear at the cursor WHILE you speak (in fields that support
+    /// verified live writes); the cleaned final text replaces them in place.
+    var streamingEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.streamingEnabled) == nil { return true }
+            return defaults.bool(forKey: Key.streamingEnabled)
+        }
+        set { defaults.set(newValue, forKey: Key.streamingEnabled) }
     }
 
     var removeFillers: Bool {

@@ -187,6 +187,12 @@ final class TextInjector {
         return true
     }
 
+    /// The clipboard safety net, callable by paths that bypass inject()
+    /// (the streaming finisher).
+    func copyToClipboard(_ text: String) {
+        putOnPasteboard(text)
+    }
+
     static func isTrusted(promptIfNeeded: Bool) -> Bool {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: promptIfNeeded]
         return AXIsProcessTrustedWithOptions(options as CFDictionary)

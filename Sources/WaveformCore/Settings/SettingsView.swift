@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var toneStyle: AppSettings.ToneStyle = AppSettings.shared.toneStyle
     @State private var contextAwareness: Bool = AppSettings.shared.contextAwarenessEnabled
     @State private var styleLearning: Bool = AppSettings.shared.styleLearningEnabled
+    @State private var streaming: Bool = AppSettings.shared.streamingEnabled
 
 
     private static let silenceChoices: [(label: String, value: Double)] = [
@@ -91,6 +92,13 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Stream words as you speak", isOn: $streaming)
+                    .onChange(of: streaming) { _, newValue in
+                        AppSettings.shared.streamingEnabled = newValue
+                    }
+                Text("Text appears at your cursor live while you talk, then the cleaned version replaces it in place. Fields that can't take live writes fall back to inserting when you stop.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Picker("Insert text by", selection: $insertionMethod) {
                     ForEach(TextInjector.Method.allCases) { method in
                         Text(method.label).tag(method)
