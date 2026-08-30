@@ -46,6 +46,10 @@ swift build && swift run waveform-tests
 
 ## Still open — next tier, in rough value order
 
+- **Pill appears at the pointer**: the HUD should show up near where the
+  mouse pointer currently is (attention is already there), instead of the
+  remembered/bottom-center position — with the drag-to-snap behavior kept
+  for people who prefer a fixed spot. Requested 30 Aug.
 - **Health tab** in the dashboard: last ten insertions with method + outcome,
   rewrite rejections with reason, live permission state.
 - **Incognito + app blocklist**: "pause history 30 min" and "never activate in
