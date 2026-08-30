@@ -180,6 +180,42 @@ final class LocalRewriter {
         }
     }
 
+    private static let composeInstructions = """
+        You write text that will be inserted at the user's cursor. Follow \
+        the user's spoken instruction to draft it. When source material is \
+        provided (an email, a message, a selection), treat it as what the \
+        user is responding to or drawing from — do not repeat it back. \
+        Write in the user's voice, matching the tone the context implies. \
+        Reply with ONLY the text to insert — no preamble, no quotes, no \
+        commentary.
+        """
+
+    /// AI mode & reply-to-selection: generate NEW text from an instruction
+    /// plus optional source material. Nil = the caller should explain rather
+    /// than insert.
+    func compose(instruction: String, material: String, context: String = "") async -> String? {
+        guard Self.isAvailable else { return nil }
+        let prompt = "Instruction: \(instruction)"
+            + (material.isEmpty ? "" : "\n\nSource material:\n\(material)")
+            + context
+        do {
+            let output: String = try await withThrowingTimeout(seconds: 15) {
+                let session = LanguageModelSession(instructions: Self.composeInstructions)
+                let response = try await session.respond(to: prompt)
+                return response.content
+            }
+            let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, text.count < 4000 else { return nil }
+            let lowered = text.lowercased()
+            let preambles = ["here is", "here's", "sure,", "sure!", "certainly", "as an ai", "i can't", "i cannot"]
+            guard !preambles.contains(where: { lowered.hasPrefix($0) }) else { return nil }
+            return text
+        } catch {
+            Log.app.error("compose failed: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
     // MARK: - Output guards
 
     private static func validated(_ output: String, against command: DictationCommand) -> String? {

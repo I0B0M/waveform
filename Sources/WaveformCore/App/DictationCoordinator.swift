@@ -125,6 +125,14 @@ final class DictationCoordinator {
     /// seconds) — begins the moment the pipeline is idle, instead of being
     /// silently swallowed as a dead-feeling hotkey press.
     private var pendingStartRequested = false
+    /// Double-tapping fn right after starting flips the session into AI MODE:
+    /// everything spoken becomes an instruction to the on-device model, which
+    /// composes the text to insert — using the selection and what's around
+    /// the cursor (the email being answered) as its material.
+    private var aiModeSession = false
+    /// The second tap of the double-tap must not arm a stop — its release is
+    /// swallowed here.
+    private var swallowNextPressEnd = false
 
     /// Stop now if possible; if the session is still starting, arm the stop
     /// to fire the moment it finishes coming up.
@@ -155,17 +163,27 @@ final class DictationCoordinator {
                 sessionStartedByPress = true
                 pressArmsStop = false
                 Task { await start() }
-            case .recording:
-                pressArmsStop = true
-            case .starting:
-                // A second tap while the first is still spinning up: its
-                // release should stop, same as if the session were live.
-                if !sessionStartedByPress { pressArmsStop = true }
+            case .recording, .starting:
+                // A second tap within a breath of starting = DOUBLE-TAP:
+                // enter AI mode instead of arming a stop.
+                let sinceStart = ProcessInfo.processInfo.systemUptime - sessionStartedAt
+                if !aiModeSession, sinceStart < 0.6 {
+                    enterAIMode()
+                    swallowNextPressEnd = true
+                } else if state == .recording {
+                    pressArmsStop = true
+                } else if !sessionStartedByPress {
+                    pressArmsStop = true
+                }
             case .finishing:
                 pendingStartRequested = true
             }
 
         case .pressEnded(let held):
+            if swallowNextPressEnd {
+                swallowNextPressEnd = false
+                return
+            }
             if pressArmsStop {
                 // Second tap of a toggle: release always stops.
                 pressArmsStop = false
@@ -193,9 +211,19 @@ final class DictationCoordinator {
         }
     }
 
+    private func enterAIMode() {
+        aiModeSession = true
+        hud.state.aiMode = true
+        // The words about to be spoken are an INSTRUCTION, not text — pull
+        // any already-streamed syllables back out and stop streaming.
+        streamer.abort()
+        Log.app.notice("AI mode engaged")
+    }
+
     private func start() async {
         guard state == .idle else { return }
         state = .starting
+        aiModeSession = false
 
         // Hot path: when the mic is already authorized there is nothing to
         // wait for — show the HUD immediately. Prompts only on first run.
@@ -384,9 +412,10 @@ final class DictationCoordinator {
             var cleaned = cleaner.clean(spoken)
 
             // Finish commands: the last sentence can BE the action. Strip it
-            // before the planner ever sees it.
+            // before the planner ever sees it. (Not in AI mode — there the
+            // whole utterance is an instruction and may mention such words.)
             var finishCommand: FinishCommand?
-            if AppSettings.shared.finishCommandsEnabled {
+            if AppSettings.shared.finishCommandsEnabled, !aiModeSession {
                 let stripped = FinishCommand.strip(from: cleaned)
                 if let command = stripped.command {
                     finishCommand = command
@@ -435,7 +464,18 @@ final class DictationCoordinator {
             )
 
             let templates = AppSettings.shared.promptTemplates
-            let plan = DictationPlanner.plan(for: DictationContext(
+            let plan: DictationPlan
+            if aiModeSession {
+                // Double-tap AI mode: the utterance IS the instruction; the
+                // selection (and the context block's before-text) is the
+                // material — "reply saying sure, I'll be in the office".
+                plan = .compose(
+                    instruction: cleaned,
+                    material: selectionAtStart ?? "",
+                    fallback: cleaned
+                )
+            } else {
+                plan = DictationPlanner.plan(for: DictationContext(
                 text: cleaned,
                 forced: forced,
                 selection: selectionAtStart,
@@ -443,7 +483,9 @@ final class DictationCoordinator {
                 templates: templates,
                 aiEnabled: AppSettings.shared.aiCommandsEnabled,
                 modelAvailable: LocalRewriter.isAvailable
-            ))
+                ))
+            }
+            aiModeSession = false
 
             var failureNotice: String?
             var finalText: String
@@ -498,6 +540,19 @@ final class DictationCoordinator {
                     return
                 }
                 finalText = transformed
+
+            case .compose(let instruction, let material, let fallback):
+                hud.state.phase = .polishing
+                if let composed = await rewriter.compose(
+                    instruction: instruction,
+                    material: material,
+                    context: rewriteContext
+                ) {
+                    finalText = composed
+                } else {
+                    finalText = fallback
+                    failureNotice = "Compose failed — inserted as spoken"
+                }
 
             case .resolveCorrections(let text):
                 hud.state.phase = .polishing
@@ -677,6 +732,8 @@ final class DictationCoordinator {
         pendingStartRequested = false
         sessionStartedByPress = false
         pressArmsStop = false
+        aiModeSession = false
+        swallowNextPressEnd = false
         streamer.abort()
         caretDot.hide()
         stopSilenceWatchdog()

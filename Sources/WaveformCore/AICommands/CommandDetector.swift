@@ -156,9 +156,26 @@ enum CommandDetector {
             "shorten", "expand", "fix", "improve", "clean", "translate", "convert",
             "simplify", "formalize", "formalise", "organize", "organise", "structure",
             "polish", "tighten", "bulletize", "condense",
+            // Compose verbs: generate NEW text from the selection instead of
+            // editing it ("respond to it like this: …").
+            "reply", "respond", "answer", "draft", "write",
         ]
         guard instructionVerbs.contains(verb) else { return nil }
         return trimmed
+    }
+
+    /// Compose instructions generate NEW text using the selection as source
+    /// material (a reply to a message), as opposed to transforming the
+    /// selection in place.
+    static func isComposeInstruction(_ instruction: String) -> Bool {
+        var words = instruction.lowercased()
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+        while let first = words.first, ["please", "can", "you", "could"].contains(first) {
+            words.removeFirst()
+        }
+        guard let verb = words.first else { return false }
+        return ["reply", "respond", "answer", "draft", "write"].contains(verb)
     }
 
     // MARK: - Regex helpers

@@ -23,6 +23,10 @@ final class HUDState: ObservableObject {
     /// "ears closed" collapse and the processing shimmer.
     @Published var phaseChangedAt: Double = Date().timeIntervalSinceReferenceDate
 
+    /// Double-tap fn engaged AI mode: the pill wears a small violet mark so
+    /// the user knows their words are an instruction, not text.
+    @Published var aiMode = false
+
     @Published var finalizedText: String = ""
     @Published var volatileText: String = ""
 
@@ -86,6 +90,7 @@ final class HUDState: ObservableObject {
         pendingShrink?.cancel()
         pendingShrink = nil
         phase = .listening
+        aiMode = false
         finalizedText = ""
         volatileText = ""
         words = []

@@ -132,3 +132,44 @@ struct DictationPlannerTests {
             == .insert("Meet at 5, no wait, 6pm."))
     }
 }
+
+@Suite("Compose routing")
+struct ComposeRoutingTests {
+    @Test("reply-type instructions with a selection compose new text")
+    func replyComposes() {
+        let plan = DictationPlanner.plan(for: DictationContext(
+            text: "Respond to it like this, I'll review it tomorrow morning",
+            forced: nil,
+            selection: "Can you look at the PR today?"
+        ))
+        guard case .compose(let instruction, let material, _) = plan else {
+            Issue.record("expected .compose, got \(plan)")
+            return
+        }
+        #expect(instruction.hasPrefix("Respond to it"))
+        #expect(material == "Can you look at the PR today?")
+    }
+
+    @Test("edit-type instructions still transform the selection in place")
+    func editTransforms() {
+        let plan = DictationPlanner.plan(for: DictationContext(
+            text: "Make this shorter and friendlier",
+            forced: nil,
+            selection: "A very long paragraph of text goes here."
+        ))
+        guard case .transformSelection = plan else {
+            Issue.record("expected .transformSelection, got \(plan)")
+            return
+        }
+    }
+
+    @Test("reply verbs without a selection are ordinary speech")
+    func replyWithoutSelection() {
+        let plan = DictationPlanner.plan(for: DictationContext(
+            text: "Reply to Sarah when you get a chance",
+            forced: nil,
+            selection: nil
+        ))
+        #expect(plan == .insert("Reply to Sarah when you get a chance"))
+    }
+}

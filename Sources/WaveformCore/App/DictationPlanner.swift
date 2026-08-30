@@ -21,6 +21,9 @@ enum DictationPlan: Equatable {
     case template(id: UUID, input: String, fallback: String)
     /// Apply a spoken instruction to the text the user had selected.
     case transformSelection(selection: String, instruction: String)
+    /// Generate new text (a reply, an answer) from the instruction, using the
+    /// selection as source material; insert at the cursor.
+    case compose(instruction: String, material: String, fallback: String)
     /// Resolve spoken self-corrections ("…at 5, no wait, 6").
     case resolveCorrections(String)
     /// A command with nothing to act on — insert nothing, explain instead.
@@ -102,9 +105,14 @@ enum DictationPlanner {
         // Everything below needs the model; without it, insert what was said.
         guard context.modelAvailable else { return .insert(text) }
 
-        // 4. A spoken instruction with a selection to apply it to.
+        // 4. A spoken instruction with a selection to apply it to. Compose
+        //    verbs ("respond to it like this…") generate NEW text from the
+        //    selection; everything else transforms the selection in place.
         if let selection = context.selection,
            let instruction = CommandDetector.selectionInstruction(in: text) {
+            if CommandDetector.isComposeInstruction(instruction) {
+                return .compose(instruction: instruction, material: selection, fallback: text)
+            }
             return .transformSelection(selection: selection, instruction: instruction)
         }
 

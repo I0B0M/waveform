@@ -67,6 +67,14 @@ struct HUDView: View {
     // arrives — they were rarely used, so they stopped costing width.
     var body: some View {
         HStack(spacing: 10) {
+            if state.aiMode {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Self.violet)
+                    .transition(.opacity)
+                    .help("AI mode — speak an instruction")
+            }
+
             // Waveform and message share one fixed stage: state changes swap
             // opacity, never layout, so the pill never jumps.
             ZStack {
