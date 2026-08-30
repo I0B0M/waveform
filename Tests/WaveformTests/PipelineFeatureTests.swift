@@ -95,6 +95,8 @@ struct RecognitionHintsTests {
         #expect(hints.contains("double slash prompt"))
         #expect(hints.contains("slash plan"))
         #expect(hints.contains("NestJS"))
-        #expect(hints.first == "double slash prompt")
+        // Finish-command hints lead the list now; the invariant that matters
+        // is that neither they nor command hints can be evicted.
+        #expect(hints.first == "send it")
     }
 }

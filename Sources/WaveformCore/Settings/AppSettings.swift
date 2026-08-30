@@ -24,6 +24,7 @@ final class AppSettings {
         static let styleCardUpdatedAt = "styleCardUpdatedAt"
         static let contextAwarenessEnabled = "contextAwarenessEnabled"
         static let streamingEnabled = "streamingEnabled"
+        static let finishCommandsEnabled = "finishCommandsEnabled"
         static let learnedTerms = "learnedTerms"
         static let learnFromCorrections = "learnFromCorrections"
         static let promptTemplates = "promptTemplates"
@@ -175,7 +176,7 @@ final class AppSettings {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
             .flatMap { ["slash \($0)", "double slash \($0)"] }
-        return Array((commandHints + triggerHints + learned + dictionary).prefix(140))
+        return Array((FinishCommand.vocabularyHints + commandHints + triggerHints + learned + dictionary).prefix(140))
     }
 
     var promptTemplates: [PromptTemplate] {
@@ -254,6 +255,16 @@ final class AppSettings {
             return defaults.bool(forKey: Key.streamingEnabled)
         }
         set { defaults.set(newValue, forKey: Key.streamingEnabled) }
+    }
+
+    /// "Send it" / "scratch that" spoken at the end of a dictation act as
+    /// the action instead of being typed.
+    var finishCommandsEnabled: Bool {
+        get {
+            if defaults.object(forKey: Key.finishCommandsEnabled) == nil { return true }
+            return defaults.bool(forKey: Key.finishCommandsEnabled)
+        }
+        set { defaults.set(newValue, forKey: Key.finishCommandsEnabled) }
     }
 
     var removeFillers: Bool {

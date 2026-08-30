@@ -131,3 +131,47 @@ struct CommandDetectorTests {
         #expect(CommandDetector.detect(in: "Create a prompt.") == nil)
     }
 }
+
+@Suite("FinishCommand")
+struct FinishCommandTests {
+    @Test("send it as its own sentence fires and is stripped")
+    func sendOwnSentence() {
+        let result = FinishCommand.strip(from: "We should ship this today. Send it.")
+        #expect(result.command == .send)
+        #expect(result.text == "We should ship this today.")
+    }
+
+    @Test("please send it mid-flow is content, not a command")
+    func sendMidSentence() {
+        let result = FinishCommand.strip(from: "When you get a chance please send it")
+        #expect(result.command == nil)
+        #expect(result.text == "When you get a chance please send it")
+    }
+
+    @Test("a comma is NOT a boundary — 'when you're done, send it' is content")
+    func commaIsContent() {
+        let result = FinishCommand.strip(from: "When you're done, send it")
+        #expect(result.command == nil)
+        #expect(result.text == "When you're done, send it")
+    }
+
+    @Test("scratch that discards, in all its variants")
+    func scratch() {
+        for phrase in ["Scratch that.", "never mind", "Actually. Cancel that!"] {
+            let result = FinishCommand.strip(from: "Some words here. " + phrase)
+            #expect(result.command == .scratch, "failed for \(phrase)")
+        }
+    }
+
+    @Test("the command alone is a valid utterance")
+    func loneCommand() {
+        #expect(FinishCommand.strip(from: "Scratch that.").command == .scratch)
+        #expect(FinishCommand.strip(from: "send it").command == .send)
+    }
+
+    @Test("nothing trailing means nothing stripped")
+    func plainText() {
+        let result = FinishCommand.strip(from: "Just a normal message about sending things.")
+        #expect(result.command == nil)
+    }
+}

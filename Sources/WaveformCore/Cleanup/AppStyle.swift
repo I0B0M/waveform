@@ -20,4 +20,23 @@ enum AppStyle {
         if messagingApps.contains(bundleId) { return .chat }
         return .standard
     }
+
+    /// What "send it" presses, per app. Only apps where a send keystroke is
+    /// unambiguous get one — a Return in a document is a stray newline, so
+    /// everywhere else the command inserts and says send isn't supported.
+    enum SendKey {
+        case returnKey       // chat composers: Return sends
+        case commandReturn   // mail: ⌘Return sends
+    }
+
+    private static let mailApps: Set<String> = [
+        "com.apple.mail", "com.microsoft.Outlook", "com.readdle.smartemail-Mac",
+    ]
+
+    static func sendKey(forBundleId bundleId: String?) -> SendKey? {
+        guard let bundleId else { return nil }
+        if messagingApps.contains(bundleId) { return .returnKey }
+        if mailApps.contains(bundleId) { return .commandReturn }
+        return nil
+    }
 }

@@ -381,7 +381,32 @@ final class DictationCoordinator {
                 : .standard
             let cleaner = TextCleaner(removeFillers: AppSettings.shared.removeFillers, style: style)
             let spoken = AppSettings.shared.voiceCommandsEnabled ? VoiceCommands.apply(to: raw) : raw
-            let cleaned = cleaner.clean(spoken)
+            var cleaned = cleaner.clean(spoken)
+
+            // Finish commands: the last sentence can BE the action. Strip it
+            // before the planner ever sees it.
+            var finishCommand: FinishCommand?
+            if AppSettings.shared.finishCommandsEnabled {
+                let stripped = FinishCommand.strip(from: cleaned)
+                if let command = stripped.command {
+                    finishCommand = command
+                    cleaned = stripped.text
+                }
+            }
+
+            if finishCommand == .scratch {
+                // "Scratch that": the whole dictation is discarded — streamed
+                // words come back out of the field too.
+                streamer.abort()
+                hud.state.phase = .notice("Scratched")
+                hideHUDAfterDelay(seconds: 1.2)
+                state = .idle
+                if pendingStartRequested {
+                    pendingStartRequested = false
+                    Task { await start() }
+                }
+                return
+            }
 
             if cleaned.isEmpty {
                 streamer.abort()
@@ -549,6 +574,38 @@ final class DictationCoordinator {
             // never around secure fields.
             if !dictatedIntoSecureField {
                 learner.noteInsertion(of: finalText)
+            }
+
+            // "Send it": fire the app's send key once the text has landed —
+            // only where a send keystroke is unambiguous (chat, mail).
+            if finishCommand == .send,
+               case .insertedDirectly = outcome {
+                let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                if let key = AppStyle.sendKey(forBundleId: frontmost) {
+                    await injector.pressSendKey(key)
+                    hud.state.phase = .notice("Sent")
+                    hideHUDAfterDelay(seconds: 1.2)
+                    state = .idle
+                    if pendingStartRequested {
+                        pendingStartRequested = false
+                        Task { await start() }
+                    }
+                    return
+                } else {
+                    hud.state.phase = .notice("Inserted — send not supported here")
+                    hideHUDAfterDelay(seconds: 2.5)
+                    state = .idle
+                    return
+                }
+            } else if finishCommand == .send, outcome == .typed || outcome == .pasted {
+                let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                if let key = AppStyle.sendKey(forBundleId: frontmost) {
+                    await injector.pressSendKey(key)
+                    hud.state.phase = .notice("Sent")
+                    hideHUDAfterDelay(seconds: 1.2)
+                    state = .idle
+                    return
+                }
             }
 
             switch outcome {

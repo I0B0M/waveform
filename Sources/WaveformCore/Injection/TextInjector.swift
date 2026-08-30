@@ -708,6 +708,23 @@ final class TextInjector {
         return true
     }
 
+    /// "Send it": press the app's send keystroke. Small settle first so the
+    /// insertion (typed events included) has landed before Return fires.
+    func pressSendKey(_ key: AppStyle.SendKey) async {
+        try? await Task.sleep(nanoseconds: 160_000_000)
+        guard let source = CGEventSource(stateID: .hidSystemState) else { return }
+        let keyCode = CGKeyCode(kVK_Return)
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true)
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
+        if key == .commandReturn {
+            keyDown?.flags = .maskCommand
+            keyUp?.flags = .maskCommand
+        }
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+        Log.injection.notice("send keystroke pressed (\(key == .commandReturn ? "cmd-return" : "return", privacy: .public))")
+    }
+
     private func postCommandV() {
         guard let source = CGEventSource(stateID: .hidSystemState) else { return }
         let vKey = CGKeyCode(kVK_ANSI_V)

@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var contextAwareness: Bool = AppSettings.shared.contextAwarenessEnabled
     @State private var styleLearning: Bool = AppSettings.shared.styleLearningEnabled
     @State private var streaming: Bool = AppSettings.shared.streamingEnabled
+    @State private var finishCommands: Bool = AppSettings.shared.finishCommandsEnabled
 
     private static let silenceChoices: [(label: String, value: Double)] = [
         ("Off (manual only)", 0), ("1.5 seconds", 1.5), ("2 seconds", 2),
@@ -85,6 +86,11 @@ struct SettingsView: View {
                         AppSettings.shared.streamingEnabled = $0
                     }
                     caption("Text appears at your cursor live while you talk, then the cleaned version replaces it in place. Fields that can't take live writes fall back to inserting when you stop.")
+                    rule
+                    toggleRow("Finish commands (“send it”)", isOn: $finishCommands) {
+                        AppSettings.shared.finishCommandsEnabled = $0
+                    }
+                    caption("End a dictation with “send it” to insert AND press the app's send key (chat and mail apps), or “scratch that” to discard everything. Only counts when it's its own sentence — “please send it” mid-message is just words.")
                     rule
                     HStack {
                         rowTitle("Insert text by")
