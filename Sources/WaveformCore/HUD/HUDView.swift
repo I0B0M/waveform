@@ -8,6 +8,7 @@ import SwiftUI
 /// Draggable anywhere on its body; never steals focus.
 struct HUDView: View {
     @ObservedObject var state: HUDState
+    @State private var hovering = false
     var onFinish: (() -> Void)? = nil
     var onCancel: (() -> Void)? = nil
     /// Finish, but run the text through the on-device model first.
@@ -58,11 +59,11 @@ struct HUDView: View {
         }
     }
 
+    // Aurora (option C): a small capsule whose 1px rim IS the spectrum, the
+    // ribbons carrying the rest. Controls stay hidden until the pointer
+    // arrives — they were rarely used, so they stopped costing width.
     var body: some View {
         HStack(spacing: 10) {
-            roundButton(symbol: "xmark", color: Self.ink3, enabled: isActive) { onCancel?() }
-                .help("Cancel — discard this dictation")
-
             // Waveform and message share one fixed stage: state changes swap
             // opacity, never layout, so the pill never jumps.
             ZStack {
@@ -85,40 +86,33 @@ struct HUDView: View {
                     .minimumScaleFactor(0.7)
                     .opacity(showsMessage ? 1 : 0)
             }
-            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36)
+            .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
             .animation(.easeOut(duration: 0.18), value: showsMessage)
 
-            roundButton(symbol: "sparkles", color: Self.violet, enabled: isActive && canPolish) {
-                onPolish?(NSEvent.modifierFlags.contains(.option))
+            HStack(spacing: 7) {
+                roundButton(symbol: "xmark", color: Self.ink3, enabled: isActive) { onCancel?() }
+                    .help("Cancel — discard this dictation")
+                roundButton(symbol: "sparkles", color: Self.violet, enabled: isActive && canPolish) {
+                    onPolish?(NSEvent.modifierFlags.contains(.option))
+                }
+                .help(canPolish
+                    ? "Organize this, then insert  (⌥-click: turn it into a prompt)"
+                    : "Needs Apple Intelligence enabled")
+                roundButton(symbol: "checkmark", color: DashboardView.ink, enabled: isActive) { onFinish?() }
+                    .help("Insert exactly as spoken")
             }
-            .help(canPolish
-                ? "Organize this, then insert  (⌥-click: turn it into a prompt)"
-                : "Needs Apple Intelligence enabled")
-
-            roundButton(symbol: "checkmark", color: DashboardView.ink, enabled: isActive) { onFinish?() }
-                .help("Insert exactly as spoken")
+            .frame(width: hovering ? 80 : 0)
+            .opacity(hovering ? 1 : 0)
+            .clipped()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 9)
-        .frame(width: 300)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(width: hovering ? 300 : 216)
         .background(pillBackground)
         .overlay(pillRim)
-        .overlay(alignment: .bottom) {
-            // The dashboard's spectrum rail, worn as a hem: the pill's one
-            // piece of chrome jewelry.
-            LinearGradient(
-                colors: [
-                    DashboardView.orange, DashboardView.pink,
-                    DashboardView.violet, DashboardView.cyan,
-                ],
-                startPoint: .leading, endPoint: .trailing
-            )
-            .frame(width: 132, height: 2)
-            .clipShape(Capsule())
-            .offset(y: -5)
-            .opacity(0.85)
-        }
-        .shadow(color: .black.opacity(0.45), radius: 18, y: 6)
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 6)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.22), value: hovering)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
@@ -128,8 +122,21 @@ struct HUDView: View {
     }
 
     private var pillRim: some View {
+        // The aurora: the spectrum lives in the border itself, at an opacity
+        // that reads as a glow's memory rather than the old neon.
         Capsule(style: .continuous)
-            .strokeBorder(Self.line, lineWidth: 1)
+            .strokeBorder(
+                LinearGradient(
+                    colors: [
+                        DashboardView.orange.opacity(0.38),
+                        DashboardView.pink.opacity(0.30),
+                        DashboardView.violet.opacity(0.38),
+                        DashboardView.cyan.opacity(0.38),
+                    ],
+                    startPoint: .leading, endPoint: .trailing
+                ),
+                lineWidth: 1
+            )
     }
 
     private func roundButton(

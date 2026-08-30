@@ -28,9 +28,9 @@ app you're typing into, and you can drag it anywhere — it remembers where.
 
 The pill shows only the moving waveform while you speak — your words belong at
 the cursor, not in a floating box. The ribbons carry the signal: orange rides
-your voice, cyan stills if the recognizer stops understanding. On the pill:
-**✕** discard · **✨** organize the text first (⌥-click builds a prompt) ·
-**✓** insert exactly as spoken.
+your voice, cyan stills if the recognizer stops understanding. Hover the pill
+for the controls: **✕** discard · **✨** organize the text first (⌥-click
+builds a prompt) · **✓** insert exactly as spoken.
 
 ## Install
 
