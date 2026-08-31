@@ -1,0 +1,1124 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Waveform — local-first dictation for macOS</title>
+<meta name="description" content="Speak anywhere, get clean text at your cursor. Transcription, cleanup and AI rewriting all run on-device — no cloud, no account, no audio ever leaves your Mac.">
+<meta name="theme-color" content="#08040F">
+<link rel="icon" href="images/app-icon.png">
+
+<meta property="og:title" content="Waveform — local-first dictation for macOS">
+<meta property="og:description" content="Speak anywhere, get clean text at your cursor. Everything runs on-device.">
+<meta property="og:image" content="social-preview.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+
+<script>document.documentElement.className += " js";</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+/* ============================================================
+   Waveform — marketing site
+   Tokens are the app's tokens: Sources/WaveformCore/Settings/
+   DashboardView.swift:34-47. Do not invent new ones.
+   ============================================================ */
+:root{
+  /* the quiet system everything sits on */
+  --ground:#08040F; --pane:#0C0718; --card:#110A1F;
+  --line:#241940; --line-soft:#1A1030;
+  --ink:#EDE9F6; --ink2:#A99DC2; --ink3:#6F6389;
+  /* accents — used sparingly, as jewelry */
+  --orange:#FF731A; --pink:#FF2E91; --violet:#B833FF; --cyan:#29D9FF;
+  --good:#3DDC97; --warn:#FFCC33;
+
+  --display:'Bricolage Grotesque',Georgia,serif;
+  --body:'Instrument Sans',-apple-system,BlinkMacSystemFont,Helvetica,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  --spectrum:linear-gradient(90deg,var(--orange),var(--pink),var(--violet),var(--cyan));
+  --shell:1120px;
+  --gut:28px;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box;margin:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  background:var(--ground);color:var(--ink);
+  font-family:var(--body);font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+img{max-width:100%;display:block}
+a{color:inherit;text-decoration:none}
+::selection{background:rgba(184,51,255,.32);color:#fff}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:3px;border-radius:4px}
+
+/* ---------- shell ---------- */
+.shell{max-width:var(--shell);margin:0 auto;padding:0 var(--gut)}
+section{position:relative}
+.rule{height:1px;background:var(--line-soft);border:0}
+
+/* ---------- micro-typography: mono, uppercase, tracked ---------- */
+.eyebrow{
+  font-family:var(--mono);font-size:11px;font-weight:500;
+  letter-spacing:.22em;text-transform:uppercase;color:var(--ink3);
+}
+.eyebrow .lit{color:var(--cyan)}
+.label{
+  font-family:var(--mono);font-size:10px;font-weight:700;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--ink3);
+}
+.spectrum{height:3px;width:120px;border-radius:2px;background:var(--spectrum)}
+
+/* ---------- headings ---------- */
+h1,h2,h3{font-family:var(--display);font-weight:700;letter-spacing:-.015em;text-wrap:balance}
+h1{font-size:clamp(38px,6vw,62px);line-height:1.03}
+h2{font-size:clamp(26px,3.4vw,34px);line-height:1.1}
+h3{font-size:18px;font-weight:600;line-height:1.25;letter-spacing:-.01em}
+.dek{color:var(--ink2);font-size:17px;max-width:64ch}
+.dek b,.prose b{color:var(--ink);font-weight:600}
+.prose{color:var(--ink2);font-size:15px;max-width:68ch}
+
+/* ---------- section head: the artifact's .opt-head ---------- */
+.head{
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  border-bottom:1px solid var(--line);padding-bottom:13px;margin-bottom:14px;
+}
+.head .n{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--violet)}
+.head h2{font-size:clamp(22px,2.6vw,26px);font-weight:600}
+.head .chip{margin-left:auto}
+
+.chip{
+  font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;border-radius:99px;padding:4px 11px;white-space:nowrap;
+  color:var(--good);border:1px solid rgba(61,220,151,.35);
+}
+.chip.v{color:var(--violet);border-color:rgba(184,51,255,.35)}
+.chip.c{color:var(--cyan);border-color:rgba(41,217,255,.32)}
+.chip.w{color:var(--warn);border-color:rgba(255,204,51,.32)}
+
+/* ---------- buttons ---------- */
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.14em;
+  text-transform:uppercase;padding:11px 20px;border-radius:99px;
+  border:1px solid var(--line);color:var(--ink2);background:transparent;
+  transition:border-color .18s ease,color .18s ease,background .18s ease;
+  cursor:pointer;white-space:nowrap;
+}
+.btn:hover{border-color:var(--ink3);color:var(--ink)}
+.btn.primary{
+  color:#08040F;background:var(--cyan);border-color:transparent;font-weight:700;
+  box-shadow:0 0 0 0 rgba(41,217,255,.35);
+}
+.btn.primary:hover{background:#5CE4FF;color:#08040F;box-shadow:0 0 24px -6px rgba(41,217,255,.5)}
+.btn.violet{color:var(--violet);border-color:rgba(184,51,255,.4)}
+.btn.violet:hover{border-color:var(--violet);color:#D77BFF}
+.btn.sm{padding:8px 15px;font-size:9.5px}
+
+/* ---------- top bar ---------- */
+.topbar{
+  position:sticky;top:0;z-index:60;
+  background:rgba(8,4,15,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line-soft);
+}
+.topbar .inner{
+  max-width:var(--shell);margin:0 auto;padding:0 var(--gut);height:60px;
+  display:flex;align-items:center;gap:26px;
+}
+.brand{display:flex;align-items:center;gap:9px;flex:0 0 auto}
+.brand .name{font-family:var(--display);font-size:16px;font-weight:600;letter-spacing:-.01em}
+.navlinks{display:flex;gap:22px;margin-left:14px}
+.navlinks a{
+  font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink3);transition:color .18s ease;
+}
+.navlinks a:hover{color:var(--ink)}
+.topbar .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.topbar .edge{height:2px;background:var(--spectrum);opacity:.85}
+@media(max-width:880px){.navlinks{display:none}}
+
+/* ---------- hero ---------- */
+.hero{padding:76px 0 0}
+.hero .spectrum{margin:18px 0 26px}
+.hero .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:30px}
+.hero .meta{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink3);margin-top:20px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+}
+.hero .meta .dot{color:var(--line)}
+
+/* ---------- the stage: a fake desktop the mocks sit on ---------- */
+.stage{
+  position:relative;border:1px solid var(--line-soft);border-radius:16px;
+  padding:34px;overflow:hidden;
+  background:
+    radial-gradient(600px 220px at 70% 0%,rgba(184,51,255,.05),transparent),
+    repeating-linear-gradient(0deg,transparent 0 27px,rgba(36,25,64,.35) 27px 28px),
+    var(--pane);
+}
+.stagelab{
+  position:absolute;top:13px;left:17px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink3);
+}
+.doc{font-size:13.5px;color:var(--ink3);max-width:52ch;line-height:27.5px}
+.doc .said{color:var(--ink)}
+.caret{
+  display:inline-block;width:2px;height:15px;background:var(--violet);
+  vertical-align:-2px;animation:blink 1.1s steps(1) infinite;
+}
+@keyframes blink{50%{opacity:0}}
+
+/* ---------- the pill, faithful to the app ---------- */
+.pill{
+  display:inline-flex;align-items:center;gap:12px;
+  padding:9px 12px 9px 18px;border-radius:99px;
+  background:rgba(17,10,31,.96);border:1px solid transparent;
+  background-clip:padding-box;position:relative;width:max-content;max-width:100%;
+  box-shadow:0 10px 30px rgba(0,0,0,.55);
+}
+/* the ribbons give up width first, so the pill never gets clipped by the stage */
+.pill svg{display:block;width:240px;height:34px;flex:0 1 240px;min-width:64px}
+.pill::before{
+  content:"";position:absolute;inset:-1px;border-radius:99px;z-index:-1;
+  background:linear-gradient(90deg,rgba(255,115,26,.42),rgba(255,46,145,.32),rgba(184,51,255,.42),rgba(41,217,255,.42));
+}
+.pill .ctrls{display:flex;gap:7px}
+.ctrl{
+  width:30px;height:30px;border-radius:99px;display:grid;place-items:center;
+  background:rgba(237,233,246,.06);color:var(--ink2);font-size:13px;line-height:1;
+  transition:background .18s ease,color .18s ease;
+}
+.ctrl.sparkle{color:var(--violet)}
+.ctrl.ok{color:var(--ink)}
+.pill .receipt{
+  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--good);padding-right:8px;
+  opacity:0;transition:opacity .3s ease;
+}
+.pill.done .receipt{opacity:1}
+
+/* ---------- ruled grid: cells split by hairlines, no gaps ---------- */
+.ruled{
+  display:grid;gap:1px;background:var(--line-soft);
+  border:1px solid var(--line-soft);border-radius:12px;overflow:hidden;
+}
+.ruled > *{background:var(--card);padding:22px 24px}
+.cols-4{grid-template-columns:repeat(4,1fr)}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+.cols-2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:900px){.cols-4{grid-template-columns:repeat(2,1fr)}.cols-3{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.cols-4,.cols-3,.cols-2{grid-template-columns:1fr}}
+
+/* ---------- stat strip (the app's, exactly) ---------- */
+.stat .lab{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+.stat .dot{width:5px;height:5px;border-radius:99px;flex:0 0 auto}
+.stat .lab span{
+  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink3);
+}
+.stat .val{
+  font-family:var(--display);font-size:30px;font-weight:700;line-height:1;
+  letter-spacing:-.02em;display:flex;align-items:baseline;gap:5px;
+}
+.stat .val em{font-family:var(--body);font-style:normal;font-size:13px;font-weight:500;color:var(--ink3)}
+.stat .note{color:var(--ink3);font-size:12.5px;margin-top:9px;line-height:1.5}
+
+/* ---------- steps ---------- */
+.step .n{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.16em;color:var(--violet);margin-bottom:12px}
+.step h3{margin-bottom:8px}
+.step p{color:var(--ink2);font-size:13.5px;line-height:1.62}
+.step kbd{
+  font-family:var(--mono);font-size:11px;background:rgba(237,233,246,.06);
+  border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink);
+}
+
+/* ---------- feature rows ---------- */
+.feat{display:flex;flex-direction:column;gap:7px}
+.feat .k{display:flex;align-items:center;gap:9px}
+.feat .k .dot{width:5px;height:5px;border-radius:99px;flex:0 0 auto}
+.feat .k h3{font-size:15px;font-weight:600;font-family:var(--body);letter-spacing:0}
+.feat p{color:var(--ink2);font-size:13.5px;line-height:1.6}
+.feat code,.inline-code{
+  font-family:var(--mono);font-size:12px;color:var(--violet);
+  background:rgba(184,51,255,.08);border-radius:4px;padding:1px 5px;
+}
+
+/* ---------- screenshot viewer ---------- */
+.shot-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.shot-tabs button{
+  font-family:var(--mono);font-size:9.5px;font-weight:500;letter-spacing:.16em;
+  text-transform:uppercase;padding:7px 13px;border-radius:7px;cursor:pointer;
+  background:transparent;border:1px solid transparent;color:var(--ink3);
+  transition:background .18s ease,color .18s ease;
+}
+.shot-tabs button:hover{color:var(--ink2)}
+.shot-tabs button[aria-selected="true"]{background:rgba(184,51,255,.10);color:var(--ink)}
+.shot-frame{
+  border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--pane);
+  box-shadow:0 24px 60px -30px rgba(0,0,0,.9);
+}
+.shot-frame .bar{
+  display:flex;align-items:center;gap:7px;padding:10px 14px;
+  border-bottom:1px solid var(--line-soft);background:var(--card);
+}
+.shot-frame .bar i{width:9px;height:9px;border-radius:99px;background:var(--line);display:block}
+.shot-frame .bar .t{
+  margin-left:6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink3);
+}
+.shot-cap{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:var(--ink3);margin-top:14px;line-height:1.7}
+
+/* ---------- panel (the artifact's .verdict) ---------- */
+.panel{
+  border:1px solid var(--line);border-radius:16px;padding:34px 36px;
+  background:linear-gradient(180deg,rgba(184,51,255,.06),transparent 60%),var(--pane);
+}
+.panel h2{margin-bottom:14px}
+.panel p{color:var(--ink2);font-size:15px;max-width:70ch;margin-bottom:12px}
+.panel p:last-child{margin-bottom:0}
+.panel p b{color:var(--ink)}
+@media(max-width:620px){.panel{padding:26px 22px}}
+
+/* ---------- comparison table ---------- */
+.tablewrap{overflow-x:auto;border:1px solid var(--line-soft);border-radius:12px;background:var(--card)}
+table{border-collapse:collapse;width:100%;min-width:660px}
+th,td{text-align:left;padding:16px 20px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+tr:last-child td{border-bottom:0}
+thead th{
+  font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink3);background:var(--pane);
+  border-bottom:1px solid var(--line);
+}
+thead th.mine{color:var(--ink)}
+tbody th{
+  font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink3);width:26%;
+}
+td{font-size:13.5px;color:var(--ink2)}
+td.mine{color:var(--ink);background:rgba(184,51,255,.035)}
+td .yes{color:var(--good);font-weight:600}
+td .no{color:var(--ink3)}
+
+/* ---------- code ---------- */
+pre{
+  font-family:var(--mono);font-size:12.5px;line-height:1.85;color:var(--ink2);
+  background:var(--card);border:1px solid var(--line-soft);border-radius:12px;
+  padding:18px 20px;overflow-x:auto;
+}
+pre .c{color:var(--ink3)}
+pre .p{color:var(--cyan)}
+
+/* ---------- ordered install steps ---------- */
+.steps-list{list-style:none;counter-reset:s;display:flex;flex-direction:column}
+.steps-list li{
+  counter-increment:s;display:flex;gap:16px;padding:16px 0;
+  border-bottom:1px solid var(--line-soft);
+}
+.steps-list li:last-child{border-bottom:0}
+.steps-list li::before{
+  content:counter(s,decimal-leading-zero);
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em;
+  color:var(--violet);padding-top:3px;flex:0 0 auto;
+}
+.steps-list p{color:var(--ink2);font-size:13.5px}
+.steps-list strong{color:var(--ink);font-weight:600}
+
+/* ---------- faq ---------- */
+details{border-bottom:1px solid var(--line-soft)}
+details summary{
+  list-style:none;cursor:pointer;padding:18px 0;display:flex;align-items:center;gap:14px;
+  font-size:15px;font-weight:500;color:var(--ink);
+}
+details summary::-webkit-details-marker{display:none}
+details summary .pm{
+  font-family:var(--mono);font-size:13px;color:var(--violet);flex:0 0 auto;width:12px;
+}
+details[open] summary .pm::after{content:"–"}
+details summary .pm::after{content:"+"}
+details .a{color:var(--ink2);font-size:14px;padding:0 0 20px 26px;max-width:70ch}
+details .a a{color:var(--cyan);border-bottom:1px solid rgba(41,217,255,.3)}
+
+/* ---------- "not yet" list ---------- */
+.notyet li{
+  display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line-soft);
+  color:var(--ink2);font-size:13.5px;list-style:none;
+}
+.notyet li:last-child{border-bottom:0}
+.notyet li b{color:var(--ink);font-weight:600}
+.notyet li .m{
+  font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink3);flex:0 0 92px;padding-top:4px;
+}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line-soft);margin-top:96px;padding:44px 0 60px}
+footer .grid{display:flex;gap:60px;flex-wrap:wrap;align-items:flex-start}
+footer .col{display:flex;flex-direction:column;gap:9px}
+footer a,footer p,footer span{
+  font-family:var(--mono);font-size:11px;color:var(--ink3);line-height:1.9;letter-spacing:.04em;
+}
+footer a:hover{color:var(--ink2)}
+footer .colhead{
+  font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--ink3);
+  opacity:.75;margin-bottom:2px;
+}
+
+/* ---------- rhythm ---------- */
+.block{margin-top:104px}
+.block-tight{margin-top:72px}
+@media(max-width:720px){
+  .block{margin-top:76px}
+  .block-tight{margin-top:56px}
+  .hero{padding-top:52px}
+  :root{--gut:20px}
+  .stage{padding:26px 18px;border-radius:14px}
+  .pill{gap:9px;padding:8px 9px 8px 13px}
+  .ctrl{width:27px;height:27px;font-size:12px}
+  .pill .ctrls{gap:5px}
+  .doc{font-size:13px;line-height:26px}
+  .shot-cap{text-align:left !important}
+  footer .grid{gap:34px}
+}
+
+/* ---------- reveal (restrained: 10px + fade, nothing else) ----------
+   Content is visible by default and only hidden once a script is actually
+   running (html.js). A dead script must never blank the page. */
+.js .reveal{opacity:0;transform:translateY(10px);transition:opacity .55s ease,transform .55s ease}
+.js .reveal.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  .js .reveal{opacity:1;transform:none;transition:none}
+  .caret{animation:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ======================= TOP BAR ======================= -->
+<header class="topbar">
+  <div class="inner">
+    <a class="brand" href="#top" aria-label="Waveform, home">
+      <svg width="22" height="22" viewBox="0 0 21 22" aria-hidden="true">
+        <rect x="0"    y="7"   width="3" height="8"  rx="1.5" fill="#FF731A"/>
+        <rect x="4.5"  y="4.5" width="3" height="13" rx="1.5" fill="#FF2E91"/>
+        <rect x="9"    y="2"   width="3" height="18" rx="1.5" fill="#E43CF5"/>
+        <rect x="13.5" y="4.5" width="3" height="13" rx="1.5" fill="#B833FF"/>
+        <rect x="18"   y="7"   width="3" height="8"  rx="1.5" fill="#29D9FF"/>
+      </svg>
+      <span class="name">Waveform</span>
+    </a>
+    <nav class="navlinks" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#app">The app</a>
+      <a href="#compare">Compare</a>
+      <a href="#install">Install</a>
+    </nav>
+    <div class="right">
+      <a class="btn sm" href="https://github.com/I0B0M/waveform">GitHub</a>
+      <a class="btn sm primary" href="https://github.com/I0B0M/waveform/releases/latest">Download</a>
+    </div>
+  </div>
+  <div class="edge"></div>
+</header>
+
+<main id="top">
+
+<!-- ======================= HERO ======================= -->
+<section class="hero">
+  <div class="shell">
+    <p class="eyebrow">Local-first dictation · macOS 26 · <span class="lit">everything stays on this Mac</span></p>
+    <div class="spectrum"></div>
+    <h1>Speak anywhere.<br>Clean text lands at&nbsp;your cursor.</h1>
+    <p class="dek" style="margin-top:18px">
+      Transcription, cleanup and AI rewriting all run <b>on-device</b> — no cloud, no
+      account, no audio ever leaves your Mac. Nothing to download but a <b>2.6 MB app</b>:
+      no model files, no API keys, no Ollama.
+    </p>
+    <div class="actions">
+      <a class="btn primary" href="https://github.com/I0B0M/waveform/releases/latest">Download the DMG</a>
+      <a class="btn" href="https://github.com/I0B0M/waveform">Read the source</a>
+    </div>
+    <p class="meta">
+      <span>macOS 26+</span><span class="dot">·</span>
+      <span>Apple silicon</span><span class="dot">·</span>
+      <span>2.6 MB</span><span class="dot">·</span>
+      <span>free &amp; open source</span>
+    </p>
+  </div>
+
+  <!-- the stage: pill + document, the real product loop -->
+  <div class="shell" style="margin-top:44px">
+    <div class="stage" id="stage" style="min-height:330px;display:flex;flex-direction:column;justify-content:space-between">
+      <span class="stagelab">Slack · #eng-reviews</span>
+      <p class="doc" style="margin-top:26px">
+        aqeeb — did you get a chance to look at my PR for the streaming inserter?
+        deadline is tomorrow…<br><br>
+        <span class="said" id="typed"></span><span class="caret"></span>
+      </p>
+      <div style="display:flex;justify-content:flex-end;margin-top:34px">
+        <div class="pill" id="pill">
+          <svg id="ribbons" width="240" height="34" viewBox="0 0 240 34"
+               preserveAspectRatio="none" aria-label="Live waveform">
+            <defs>
+              <linearGradient id="g-o" x1="0" x2="1">
+                <stop offset="0"    stop-color="#FF731A" stop-opacity="0"/>
+                <stop offset=".22"  stop-color="#FF731A" stop-opacity=".95"/>
+                <stop offset=".78"  stop-color="#FF731A" stop-opacity=".95"/>
+                <stop offset="1"    stop-color="#FF731A" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="g-v" x1="0" x2="1">
+                <stop offset="0"    stop-color="#B833FF" stop-opacity="0"/>
+                <stop offset=".22"  stop-color="#B833FF" stop-opacity=".95"/>
+                <stop offset=".78"  stop-color="#B833FF" stop-opacity=".95"/>
+                <stop offset="1"    stop-color="#B833FF" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="g-c" x1="0" x2="1">
+                <stop offset="0"    stop-color="#29D9FF" stop-opacity="0"/>
+                <stop offset=".22"  stop-color="#29D9FF" stop-opacity=".95"/>
+                <stop offset=".78"  stop-color="#29D9FF" stop-opacity=".95"/>
+                <stop offset="1"    stop-color="#29D9FF" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <path id="r-o" fill="none" stroke="url(#g-o)" stroke-width="2.4" stroke-linecap="round"/>
+            <path id="r-v" fill="none" stroke="url(#g-v)" stroke-width="2.4" stroke-linecap="round"/>
+            <path id="r-c" fill="none" stroke="url(#g-c)" stroke-width="2.4" stroke-linecap="round"/>
+          </svg>
+          <span class="receipt" id="receipt">inserted</span>
+          <div class="ctrls" id="ctrls">
+            <span class="ctrl" title="Discard">✕</span>
+            <span class="ctrl sparkle" title="Organize first">✦</span>
+            <span class="ctrl ok" title="Insert as spoken">✓</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="shot-cap" style="text-align:right">
+      The pill never takes focus from the app you're typing into · drag it anywhere, it remembers
+    </p>
+  </div>
+</section>
+
+<!-- ======================= PROOF STRIP ======================= -->
+<section class="block-tight">
+  <div class="shell reveal">
+    <div class="ruled cols-4">
+      <div class="stat">
+        <div class="lab"><i class="dot" style="background:var(--orange)"></i><span>Bytes uploaded</span></div>
+        <div class="val">0</div>
+        <p class="note">Audio and text never leave the machine.</p>
+      </div>
+      <div class="stat">
+        <div class="lab"><i class="dot" style="background:var(--pink)"></i><span>App size</span></div>
+        <div class="val">2.6 <em>MB</em></div>
+        <p class="note">It rides macOS 26's own speech model.</p>
+      </div>
+      <div class="stat">
+        <div class="lab"><i class="dot" style="background:var(--violet)"></i><span>Setup steps</span></div>
+        <div class="val">2 <em>grants</em></div>
+        <p class="note">Microphone and Accessibility. That's it.</p>
+      </div>
+      <div class="stat">
+        <div class="lab"><i class="dot" style="background:var(--cyan)"></i><span>Idle cost</span></div>
+        <div class="val">~0</div>
+        <p class="note">No engine, no timers, no animation when idle.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= HOW IT WORKS ======================= -->
+<section class="block" id="how">
+  <div class="shell">
+    <div class="head reveal">
+      <span class="n">01</span>
+      <h2>How it works</h2>
+      <span class="chip">Four beats, no windows</span>
+    </div>
+    <p class="prose reveal" style="margin-bottom:30px">
+      One hotkey, one floating pill, and your words at the cursor. There is no
+      transcript window to copy out of and nothing to paste — the whole loop is
+      <b>speak, stop, keep typing</b>.
+    </p>
+
+    <div class="ruled cols-4 reveal">
+      <div class="step">
+        <div class="n">01 / TAP</div>
+        <h3>Press <kbd>fn</kbd></h3>
+        <p>The pill appears near your cursor and never steals focus. Hold <kbd>fn</kbd> for 2+ seconds instead and it's push-to-talk — release inserts immediately.</p>
+      </div>
+      <div class="step">
+        <div class="n">02 / TALK</div>
+        <h3>Say it, badly</h3>
+        <p>Live on-device transcription. The ribbons carry the signal: orange rides your voice, cyan stills if the recognizer stops understanding you.</p>
+      </div>
+      <div class="step">
+        <div class="n">03 / STOP</div>
+        <h3>Just stop talking</h3>
+        <p>Roughly 2.5 seconds of silence ends it on its own — brief pauses between sentences don't count. The hotkey always stops it immediately.</p>
+      </div>
+      <div class="step">
+        <div class="n">04 / LANDS</div>
+        <h3>Text at the cursor</h3>
+        <p>Cleaned and inserted wherever you were: Slack, VS Code, a browser field, Notes. Your final cursor wins, and the clipboard always holds a copy.</p>
+      </div>
+    </div>
+
+    <p class="shot-cap reveal">
+      Hover the pill for the controls · <span style="color:var(--ink2)">✕</span> discard ·
+      <span style="color:var(--violet)">✦</span> organize the text first (⌥-click builds a prompt) ·
+      <span style="color:var(--ink2)">✓</span> insert exactly as spoken
+    </p>
+  </div>
+</section>
+
+<!-- ======================= FEATURES ======================= -->
+<section class="block" id="features">
+  <div class="shell">
+    <div class="head reveal">
+      <span class="n">02</span>
+      <h2>Everything it does</h2>
+      <span class="chip">All on-device</span>
+    </div>
+    <p class="prose reveal" style="margin-bottom:34px">
+      Grouped the way the app groups them — <b>Speak</b>, <b>Teach it</b>, <b>AI mode</b> —
+      because the sidebar you'll use is organised the same way.
+    </p>
+
+    <p class="label reveal" style="margin-bottom:12px">Speak</p>
+    <div class="ruled cols-3 reveal">
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--orange)"></i><h3>Filler removal</h3></div>
+        <p>“um okay so basically…” becomes “Okay, so basically…”. Conservative rules that never rephrase you. Toggleable.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--orange)"></i><h3>Self-correction</h3></div>
+        <p>“…at 5, no wait, 6pm” resolves to “6pm”. You get to change your mind out loud, like a person.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--orange)"></i><h3>Spoken formatting</h3></div>
+        <p>“new paragraph”, “bullet point”, punctuation by name, and “delete that” — handled as commands, not typed out.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--pink)"></i><h3>Streaming insertion</h3></div>
+        <p>Words appear at your cursor live while you talk, then the cleaned version replaces them in place. Fields that can't take live writes fall back to inserting at the end.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--pink)"></i><h3>Finish commands</h3></div>
+        <p>End with “send it” to insert <em>and</em> press the app's send key. “Scratch that” throws the whole thing away. Only counts as its own sentence.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--pink)"></i><h3>Undo the insertion</h3></div>
+        <p>A menu-bar item that verifies the field still ends with what it wrote, in the same app, inside 15 seconds. It never blind-fires.</p>
+      </div>
+    </div>
+
+    <p class="label reveal" style="margin:34px 0 12px">Teach it</p>
+    <div class="ruled cols-3 reveal">
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--violet)"></i><h3>It learns your vocabulary</h3></div>
+        <p>Fix a word it typed — “prom” → “prompt”, “nestjs” → “NestJS” — and it notices, stores the correction, and stops making that mistake. Only the corrected word is kept, never what you were writing.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--violet)"></i><h3>Personal dictionary</h3></div>
+        <p>One term per line: names, jargon, acronyms. It biases recognition from the very next dictation.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--violet)"></i><h3>Prompt library</h3></div>
+        <p>Say <code>//plan</code>, <code>//bug</code>, <code>//review</code>, <code>//ticket</code> — or your own trigger — then ramble. Your words get poured into that shape.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--cyan)"></i><h3>Voice snippets</h3></div>
+        <p>Say a trigger, get the stored text. Addresses, boilerplate, the paragraph you retype four times a week.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--cyan)"></i><h3>History &amp; scratchpad</h3></div>
+        <p>Local, capped, and clearable — stats and recent dictations come from a file on your own disk. Clearing it means clearing it.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--cyan)"></i><h3>Per-app style</h3></div>
+        <p>Punctuation and casing adapt to where you're typing. <b>Partial today</b> — tone doesn't adapt yet, and the rules aren't editable.</p>
+      </div>
+    </div>
+
+    <p class="label reveal" style="margin:34px 0 12px">AI mode</p>
+    <div class="ruled cols-2 reveal">
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--violet)"></i><h3>The ✦ button</h3></div>
+        <p>While the pill is up, press ✦ instead of ✓ and the on-device model organizes your words before they land. ⌥-click builds a prompt instead of tidying a message. No speech recognition is involved, so it can't be misheard.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--violet)"></i><h3><code>//commands</code></h3></div>
+        <p>Say <code>//better</code>, <code>//shorter</code>, <code>//professional</code> or <code>//prompt</code> at the start and ramble — the local model restructures everything after it. Natural phrasing works too; the slash form never misfires.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--cyan)"></i><h3>Rewrite a selection</h3></div>
+        <p>Select text anywhere, say a command with nothing after it, and it's rewritten in place. Double-tap <kbd>fn</kbd> for AI mode and reply straight to what you've highlighted.</p>
+      </div>
+      <div class="feat">
+        <div class="k"><i class="dot" style="background:var(--cyan)"></i><h3>Any brain you want</h3></div>
+        <p>Apple Intelligence on your Mac by default and free. If you'd rather, point it at a local model or any provider's API on <b>your own key</b> — that path ships switched off.</p>
+      </div>
+    </div>
+
+    <p class="shot-cap reveal">
+      If a rewrite fails a sanity check, your words are inserted exactly as spoken and the pill says why.
+      It can never silently do nothing.
+    </p>
+  </div>
+</section>
+
+<!-- ======================= THE APP ======================= -->
+<section class="block" id="app">
+  <div class="shell">
+    <div class="head reveal">
+      <span class="n">03</span>
+      <h2>The window behind the pill</h2>
+      <span class="chip v">Menu-bar app</span>
+    </div>
+    <p class="prose reveal" style="margin-bottom:26px">
+      Most of the time Waveform is a menu-bar icon that shows <b>live permission status</b> —
+      if something isn't working, that's the first place to look. Open the window and you get
+      the dashboard: what you've dictated, what it has learned, and every switch.
+    </p>
+
+    <div class="reveal">
+      <div class="shot-tabs" role="tablist" aria-label="App screens">
+        <button role="tab" aria-selected="true"  data-shot="images/dashboard-home.png"     data-cap="Home — stats, top apps and recent dictations, all read from a capped local file.">Home</button>
+        <button role="tab" aria-selected="false" data-shot="images/dashboard-prompts.png"  data-cap="Prompts — the shapes your ramble gets poured into. Four ship; add your own triggers.">Prompts</button>
+        <button role="tab" aria-selected="false" data-shot="images/dashboard-snippets.png" data-cap="Snippets — say a trigger, get the stored text.">Snippets</button>
+        <button role="tab" aria-selected="false" data-shot="images/dashboard-settings.png" data-cap="Settings — hotkey, timing, insertion. Everything saves on change; there is no Save button.">Settings</button>
+      </div>
+      <div class="shot-frame">
+        <div class="bar"><i></i><i></i><i></i><span class="t">Waveform</span></div>
+        <img id="shot" src="images/dashboard-home.png" alt="Waveform dashboard, Home tab" width="1836" height="1240">
+      </div>
+      <p class="shot-cap" id="shotcap">Home — stats, top apps and recent dictations, all read from a capped local file.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= PRIVACY ======================= -->
+<section class="block" id="privacy">
+  <div class="shell reveal">
+    <div class="panel">
+      <p class="eyebrow" style="margin-bottom:14px">The whole privacy policy</p>
+      <h2>Nothing leaves your Mac.</h2>
+      <p>
+        Speech recognition rides <b>macOS 26's own on-device model</b>. Cleanup is deterministic
+        rules running locally. Rewriting uses <b>Apple Intelligence</b>, on your machine. There is
+        no account to make, no telemetry to opt out of, and no server that could be breached,
+        because there is no server.
+      </p>
+      <p>
+        Your history is a capped JSON file on your own disk. The dictionary only ever stores the
+        <b>corrected word</b> — never the sentence you were writing when you fixed it. Both are
+        visible in the app and clearing them means clearing them.
+      </p>
+      <p>
+        One exception, and it is yours to switch on: AI mode can be pointed at a local model or a
+        cloud provider's API using <b>your own key</b>. It ships off. Turn it on and text goes where
+        you told it to go — nowhere else.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= COMPARE ======================= -->
+<section class="block" id="compare">
+  <div class="shell">
+    <div class="head reveal">
+      <span class="n">04</span>
+      <h2>How it's different</h2>
+      <span class="chip w">Honestly</span>
+    </div>
+    <p class="prose reveal" style="margin-bottom:26px">
+      Local dictation isn't rare any more. What's unusual here is <b>zero setup</b>: riding the
+      speech model macOS already ships means no downloads, no keys, no runtime to install.
+    </p>
+
+    <div class="tablewrap reveal">
+      <table>
+        <thead>
+          <tr>
+            <th></th>
+            <th class="mine">Waveform</th>
+            <th>Cloud dictation</th>
+            <th>Local, bring-your-own-model</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Audio leaves your Mac</th>
+            <td class="mine"><span class="yes">Never</span></td>
+            <td>Yes — that's the design</td>
+            <td><span class="no">No</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Before first use</th>
+            <td class="mine">Grant mic + accessibility</td>
+            <td>Make an account, sign in</td>
+            <td>Download a model, sometimes a runtime</td>
+          </tr>
+          <tr>
+            <th scope="row">On disk</th>
+            <td class="mine">2.6 MB</td>
+            <td>An app plus a session</td>
+            <td>App plus gigabytes of weights</td>
+          </tr>
+          <tr>
+            <th scope="row">Works offline</th>
+            <td class="mine"><span class="yes">Entirely</span></td>
+            <td><span class="no">No</span></td>
+            <td><span class="yes">Yes</span></td>
+          </tr>
+          <tr>
+            <th scope="row">AI rewriting</th>
+            <td class="mine">On-device, free, optional cloud on your key</td>
+            <td>Server-side, on their key</td>
+            <td>Varies — usually your local model</td>
+          </tr>
+          <tr>
+            <th scope="row">Cost</th>
+            <td class="mine">Free, source on GitHub</td>
+            <td>Subscription</td>
+            <td>Mixed</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="shot-cap reveal">
+      The two right-hand columns describe categories, not one product. VoiceInk and Superwhisper are
+      local too — they sit in the third column. Wispr Flow sits in the second and has no offline mode.
+      For meeting and file transcription, MacWhisper owns that job; Waveform doesn't try to.
+    </p>
+  </div>
+</section>
+
+<!-- ======================= INSTALL ======================= -->
+<section class="block" id="install">
+  <div class="shell">
+    <div class="head reveal">
+      <span class="n">05</span>
+      <h2>Install it in a minute</h2>
+      <span class="chip c">macOS 26 · Apple silicon</span>
+    </div>
+
+    <div class="ruled cols-2 reveal" style="margin-bottom:26px">
+      <div>
+        <p class="label" style="margin-bottom:14px">Just want to use it</p>
+        <ol class="steps-list">
+          <li><p><strong>Download the DMG</strong> and drag Waveform to Applications.</p></li>
+          <li><p><strong>Right-click it → Open</strong> the first time. This build is signed with a locally-generated certificate rather than a paid Apple Developer ID, so macOS shows one warning it won't show again.</p></li>
+          <li><p>Press the hotkey once and grant <strong>Microphone</strong>, then <strong>Accessibility</strong> — needed to insert text into other apps and for the <kbd>fn</kbd> hotkeys.</p></li>
+          <li><p>The first dictation may download the system speech model once. macOS manages it; you don't.</p></li>
+        </ol>
+        <a class="btn primary" style="margin-top:20px" href="https://github.com/I0B0M/waveform/releases/latest">Download the DMG</a>
+      </div>
+      <div>
+        <p class="label" style="margin-bottom:14px">Build it yourself</p>
+        <p class="prose" style="font-size:13.5px;margin-bottom:14px">
+          Needs macOS 26 on Apple silicon and Xcode <b>Command Line Tools</b> — no Xcode.
+        </p>
+<pre><span class="c"># one-time</span>
+xcode-select --install
+
+git clone https://github.com/I0B0M/waveform
+cd waveform
+<span class="p">INSTALL=1</span> Scripts/build-app.sh
+open /Applications/Waveform.app</pre>
+        <p class="prose" style="font-size:13px;margin-top:14px">
+          The script makes a local “Waveform Dev” signing certificate on first run, so your
+          permission grants survive rebuilds. Drop <code class="inline-code">INSTALL=1</code> to
+          keep the build local.
+        </p>
+      </div>
+    </div>
+
+    <p class="shot-cap reveal">
+      If macOS opens the emoji picker when you press <kbd>fn</kbd>, set
+      System&nbsp;Settings → Keyboard → “Press 🌐 key to” → <b>Do Nothing</b>. Five other hotkey
+      presets are in Settings, including double-tap Control.
+    </p>
+  </div>
+</section>
+
+<!-- ======================= NOT YET ======================= -->
+<section class="block" id="roadmap">
+  <div class="shell">
+    <div class="head reveal">
+      <span class="n">06</span>
+      <h2>What isn't built yet</h2>
+      <span class="chip v">Stated plainly</span>
+    </div>
+    <p class="prose reveal" style="margin-bottom:22px">
+      Roughly in the order it'd get added. Nothing here is hidden behind a “coming soon”.
+    </p>
+    <ul class="notyet reveal">
+      <li><span class="m">Next</span><span><b>Editable per-app rules.</b> The bundle IDs are hardcoded today; that should be a table you control.</span></li>
+      <li><span class="m">Next</span><span><b>Custom hotkey recorder.</b> Six fixed presets today, no free-form recorder.</span></li>
+      <li><span class="m">Soon</span><span><b>Health tab.</b> Last ten insertions with method and outcome, rewrite rejections with reasons, live permission state.</span></li>
+      <li><span class="m">Soon</span><span><b>Guided first run.</b> Accessibility versus Input Monitoring confusion is the number-one support issue.</span></li>
+      <li><span class="m">Soon</span><span><b>Auto-update.</b> The DMG has no update path — you'll be checking Releases for now.</span></li>
+      <li><span class="m">Never</span><span><b>Other languages.</b> English only, by choice.</span></li>
+      <li><span class="m">Never</span><span><b>Meeting and file transcription.</b> Different job, and MacWhisper already does it well.</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ======================= FAQ ======================= -->
+<section class="block" id="faq">
+  <div class="shell">
+    <div class="head reveal">
+      <span class="n">07</span>
+      <h2>Questions</h2>
+    </div>
+    <div class="reveal">
+      <details open>
+        <summary><span class="pm"></span>Does any audio or text ever leave my Mac?</summary>
+        <div class="a">No. Recognition uses the on-device speech model in macOS 26, cleanup is local rules, and rewriting uses Apple Intelligence on your machine. The only path off the Mac is one you configure yourself in AI mode with your own API key — and it ships disabled.</div>
+      </details>
+      <details>
+        <summary><span class="pm"></span>Why do I have to right-click → Open?</summary>
+        <div class="a">The build is signed with a locally-generated certificate instead of a paid Apple Developer ID. macOS shows the warning once. Signing with a real Developer ID and notarising would remove it entirely — no code changes needed.</div>
+      </details>
+      <details>
+        <summary><span class="pm"></span>Why does it need Accessibility permission?</summary>
+        <div class="a">To write text into other applications, and to watch for the <kbd>fn</kbd> and double-tap-Control hotkeys. Without it, Waveform can hear you but can't put the words anywhere.</div>
+      </details>
+      <details>
+        <summary><span class="pm"></span>What are the requirements?</summary>
+        <div class="a">macOS 26 or later on Apple silicon. The AI features additionally need Apple Intelligence enabled — plain dictation works without it.</div>
+      </details>
+      <details>
+        <summary><span class="pm"></span>Does it slow my Mac down?</summary>
+        <div class="a">Idle cost is about zero: no audio engine, no timers and no animation while you're not dictating. The one exception is the double-tap-Control preset, which keeps a listen-only event tap alive — microseconds per keystroke.</div>
+      </details>
+      <details>
+        <summary><span class="pm"></span>Can it transcribe a meeting recording?</summary>
+        <div class="a">No, and it won't. Waveform is for speaking into the app you're already using. MacWhisper owns file and meeting transcription; that's a different job.</div>
+      </details>
+      <details>
+        <summary><span class="pm"></span>What if the AI rewrite gets it wrong?</summary>
+        <div class="a">If the model is unavailable or a rewrite fails its sanity check, your words are inserted exactly as spoken and the pill tells you why. It can never silently do nothing, and the clipboard always holds the text.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= CTA ======================= -->
+<section class="block">
+  <div class="shell reveal" style="text-align:center;display:flex;flex-direction:column;align-items:center">
+    <div class="spectrum" style="margin-bottom:24px"></div>
+    <h2 style="font-size:clamp(28px,4.4vw,44px);font-weight:700;max-width:18ch">Stop typing what you could have said.</h2>
+    <p class="dek" style="margin-top:16px;text-align:center">
+      2.6 MB, two permission grants, and nothing to sign up for.
+    </p>
+    <div class="actions" style="justify-content:center;margin-top:28px">
+      <a class="btn primary" href="https://github.com/I0B0M/waveform/releases/latest">Download the DMG</a>
+      <a class="btn violet" href="https://github.com/I0B0M/waveform">Star it on GitHub</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ======================= FOOTER ======================= -->
+<footer>
+  <div class="shell">
+    <div class="grid">
+      <div class="col" style="flex:1 1 240px">
+        <a class="brand" href="#top" style="margin-bottom:8px">
+          <svg width="18" height="18" viewBox="0 0 21 22" aria-hidden="true">
+            <rect x="0"    y="7"   width="3" height="8"  rx="1.5" fill="#FF731A"/>
+            <rect x="4.5"  y="4.5" width="3" height="13" rx="1.5" fill="#FF2E91"/>
+            <rect x="9"    y="2"   width="3" height="18" rx="1.5" fill="#E43CF5"/>
+            <rect x="13.5" y="4.5" width="3" height="13" rx="1.5" fill="#B833FF"/>
+            <rect x="18"   y="7"   width="3" height="8"  rx="1.5" fill="#29D9FF"/>
+          </svg>
+          <span class="name" style="font-size:14px">Waveform</span>
+        </a>
+        <p>Local-first dictation for macOS 26.<br>Everything stays on this Mac.</p>
+      </div>
+      <div class="col">
+        <span class="colhead">Product</span>
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#compare">Compare</a>
+        <a href="#roadmap">What isn't built</a>
+      </div>
+      <div class="col">
+        <span class="colhead">Get it</span>
+        <a href="https://github.com/I0B0M/waveform/releases/latest">Download DMG</a>
+        <a href="#install">Build from source</a>
+        <a href="#faq">Questions</a>
+      </div>
+      <div class="col">
+        <span class="colhead">Source</span>
+        <a href="https://github.com/I0B0M/waveform">Repository</a>
+        <a href="https://github.com/I0B0M/waveform/issues">Issues</a>
+        <a href="https://github.com/I0B0M/waveform/releases">Releases</a>
+      </div>
+    </div>
+    <div class="spectrum" style="margin:36px 0 16px;width:100%;height:2px;opacity:.55"></div>
+    <p>mic ✓ · access ✓ · 100% on-device</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- 1. the ribbons: three fading strokes, like the HUD ---------- */
+  var W = 240, H = 34, MID = H/2, N = 60;
+  var paths = [
+    { el: document.getElementById("r-o"), seed: 0.0, amp: 1.00 },
+    { el: document.getElementById("r-v"), seed: 2.1, amp: 0.86 },
+    { el: document.getElementById("r-c"), seed: 4.2, amp: 0.72 }
+  ];
+
+  function ribbon(t, seed, amp, level){
+    var pts = [], i, x, env, y;
+    for (i = 0; i <= N; i++){
+      x = i / N;
+      env = Math.pow(Math.sin(Math.PI * x), 1.35);      // taper both ends
+      y = MID + env * amp * level * 12.5 * (
+            Math.sin(x * 6.2  + t * 1.7 + seed)       * 0.62 +
+            Math.sin(x * 11.3 - t * 2.3 + seed * 2.0) * 0.26 +
+            Math.sin(x * 3.1  + t * 1.1 + seed * 3.0) * 0.34
+          );
+      pts.push([x * W, y]);
+    }
+    var d = "M" + pts[0][0].toFixed(1) + "," + pts[0][1].toFixed(1), mx, my;
+    for (i = 1; i < pts.length - 1; i++){
+      mx = (pts[i][0] + pts[i+1][0]) / 2;
+      my = (pts[i][1] + pts[i+1][1]) / 2;
+      d += "Q" + pts[i][0].toFixed(1) + "," + pts[i][1].toFixed(1) + " " + mx.toFixed(1) + "," + my.toFixed(1);
+    }
+    d += "L" + pts[N][0].toFixed(1) + "," + pts[N][1].toFixed(1);
+    return d;
+  }
+
+  function draw(t, level){
+    for (var i = 0; i < paths.length; i++){
+      paths[i].el.setAttribute("d", ribbon(t, paths[i].seed, paths[i].amp, level));
+    }
+  }
+
+  /* ---------- 2. the loop: speak -> type -> flatten -> receipt ---------- */
+  var SENTENCE = "Hey! Yeah, I saw it. I'll review the PR tonight and get comments back before the morning.";
+  var typed   = document.getElementById("typed");
+  var pill    = document.getElementById("pill");
+  var stage   = document.getElementById("stage");
+
+  /* Reduced motion gets one static frame — the finished state, so the section
+     still says what it means. Only the loop is skipped; everything below this
+     (tabs, reveal) must still run. */
+  if (reduce){
+    draw(0, 0.75);
+    typed.textContent = SENTENCE;
+    pill.classList.add("done");
+  }
+
+  /* timeline, in seconds */
+  var SPEAK = 6.2, FLATTEN = 0.7, HOLD = 2.6, RESET = 1.4;
+  var CYCLE = SPEAK + FLATTEN + HOLD + RESET;
+  var t0 = null;
+
+  /* Cheap on-screen test. The loop itself never stops — a start/stop state
+     machine can get stuck off, and a stalled hero is worse than a few
+     rect reads. */
+  function onScreen(){
+    var r = stage.getBoundingClientRect();
+    return r.bottom > 0 && r.top < (window.innerHeight || 0);
+  }
+
+  function frame(now){
+    if (t0 === null) t0 = now;
+    var e = ((now - t0) / 1000) % CYCLE;
+    var level, chars;
+
+    if (!onScreen()){ window.requestAnimationFrame(frame); return; }
+
+    if (e < SPEAK){
+      // ramp in over the first 500ms, then ride
+      level = Math.min(1, e / 0.5) * (0.72 + 0.28 * Math.sin(e * 3.4));
+      chars = Math.floor(SENTENCE.length * Math.min(1, e / (SPEAK - 0.9)));
+      pill.classList.remove("done");
+    } else if (e < SPEAK + FLATTEN){
+      level = 1 - (e - SPEAK) / FLATTEN;          // flatten
+      chars = SENTENCE.length;
+      pill.classList.remove("done");
+    } else if (e < SPEAK + FLATTEN + HOLD){
+      level = 0;
+      chars = SENTENCE.length;
+      pill.classList.add("done");                  // receipt
+    } else {
+      level = 0;
+      chars = 0;
+      pill.classList.remove("done");
+    }
+
+    draw(e, Math.max(0, level));
+    if (typed.textContent.length !== chars) typed.textContent = SENTENCE.slice(0, chars);
+    window.requestAnimationFrame(frame);
+  }
+  if (!reduce) window.requestAnimationFrame(frame);
+
+  /* ---------- 3. screenshot tabs ---------- */
+  var tabs = document.querySelectorAll(".shot-tabs button");
+  var shot = document.getElementById("shot");
+  var cap  = document.getElementById("shotcap");
+  Array.prototype.forEach.call(tabs, function(btn){
+    btn.addEventListener("click", function(){
+      Array.prototype.forEach.call(tabs, function(b){ b.setAttribute("aria-selected", "false"); });
+      btn.setAttribute("aria-selected", "true");
+      shot.src = btn.getAttribute("data-shot");
+      shot.alt = "Waveform dashboard, " + btn.textContent + " tab";
+      cap.textContent = btn.getAttribute("data-cap");
+    });
+  });
+
+  /* ---------- 4. reveal ----------
+     A plain rect check on scroll, not an observer. Same reason as the loop
+     above: there is no state it can get stuck in, and if it never runs the
+     content is already visible. */
+  var pending = Array.prototype.slice.call(document.querySelectorAll(".reveal"));
+
+  function sweep(){
+    var vh = window.innerHeight || 0, i = 0, r;
+    while (i < pending.length){
+      r = pending[i].getBoundingClientRect();
+      /* top-only: anything already scrolled past counts too, so a jump to an
+         anchor can never strand a section invisible above the viewport. */
+      if (r.top < vh * 0.92){
+        pending[i].classList.add("in");
+        pending.splice(i, 1);
+      } else { i++; }
+    }
+    if (!pending.length){
+      window.removeEventListener("scroll", sweep);
+      window.removeEventListener("resize", sweep);
+      document.removeEventListener("visibilitychange", sweep);
+    }
+  }
+
+  /* Called straight from the events — no rAF in this path. A backgrounded tab
+     suspends frames, and content must not still be hidden when it comes back. */
+  window.addEventListener("scroll", sweep, { passive: true });
+  window.addEventListener("resize", sweep);
+  window.addEventListener("load", sweep);
+  document.addEventListener("visibilitychange", sweep);
+  sweep();
+})();
+</script>
+</body>
+</html>
